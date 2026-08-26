@@ -72,7 +72,7 @@
         ul { list-style: none; padding: 0; margin: 0; }
         .card-item {
             background: var(--card-bg); border-radius: 8px; padding: 12px; margin-bottom: 10px;
-            display: flex; flex-direction: column; gap: 8px;
+            display: flex; flex-direction: column; gap: 10px;
         }
         .card-row { display: flex; justify-content: space-between; align-items: center; }
 
@@ -86,22 +86,23 @@
         /* 元件控制按鈕 */
         .icon-btn {
             background: #2b2b36; border: 1px solid #444; color: #fff; padding: 6px 12px;
-            border-radius: 4px; font-size: 0.85em; cursor: pointer;
+            border-radius: 4px; font-size: 0.85em; cursor: pointer; min-width: 70px;
         }
-        .icon-btn.active { background: var(--danger-color); border-color: var(--danger-color); }
+        .icon-btn.muted { background: var(--danger-color); border-color: var(--danger-color); }
         .icon-btn.visible { background: var(--success-color); border-color: var(--success-color); }
 
         /* 音軌音量滑桿與選單 */
         .slider-container { display: flex; align-items: center; gap: 8px; width: 100%; }
-        .slider-container input[type=range] { flex: 1; }
-        select { background: #2b2b36; border: 1px solid #444; color: #fff; padding: 4px 8px; border-radius: 4px; }
+        .slider-container span { font-size: 0.8em; color: var(--text-sub); width: 35px; }
+        .slider-container input[type=range] { flex: 1; height: 20px; }
+        select { background: #2b2b36; border: 1px solid #444; color: #fff; padding: 6px 8px; border-radius: 4px; }
     </style>
 </head>
 <body>
 
-<!-- 1. 設定電腦 IP 區塊 -->
+<!-- 設定 IP 區塊 -->
 <div class="conn-box">
-    <input type="text" id="server-ip" value="192.168.1.100" placeholder="輸入電腦 IP (如: 192.168.1.50)">
+    <input type="text" id="server-ip" value="127.0.0.1" placeholder="輸入電腦 IP (如: 192.168.1.50)">
     <button onclick="connectOBS()">連接 :4455</button>
 </div>
 
@@ -112,13 +113,13 @@
     <div class="stat-item"><div class="label">掉幀</div><div id="dropped-frames" class="val">0%</div></div>
 </div>
 
-<!-- 2. 串流/錄影 開關按鈕 -->
+<!-- 串流/錄影 開關 -->
 <div class="action-btns">
     <button id="btn-toggle-stream" class="btn-action btn-stream" onclick="toggleStream()">開始串流</button>
     <button id="btn-toggle-record" class="btn-action btn-record" onclick="toggleRecord()">開始錄影</button>
 </div>
 
-<!-- 3. 書籤頁籤導覽 (Tabs) -->
+<!-- 頁籤導覽 -->
 <div class="tab-nav">
     <button class="tab-btn active" onclick="switchTab('tab-scenes', this)">場景</button>
     <button class="tab-btn" onclick="switchTab('tab-sources', this)">來源(可見)</button>
@@ -130,12 +131,12 @@
     <ul id="scenes-list"></ul>
 </div>
 
-<!-- 分頁 2: 來源列表 (含顯示/隱藏) -->
+<!-- 分頁 2: 來源列表 -->
 <div id="tab-sources" class="tab-content">
     <ul id="sources-list"></ul>
 </div>
 
-<!-- 分頁 3: 音軌控制 (音量、靜音、聲道平衡、監聽) -->
+<!-- 分頁 3: 音軌控制 -->
 <div id="tab-audio" class="tab-content">
     <ul id="audio-list"></ul>
 </div>
@@ -145,14 +146,16 @@
     let refreshTimer = null;
     let isStreaming = false;
     let isRecording = false;
+    let currentSceneName = "";
+    
+    // 記錄 UI 是否已被建立，防止重刷 DOM 導致閃爍
+    let isAudioListBuilt = false;
+    let isInteracting = false; // 使用者操作 slider 中不覆蓋數值
 
     function connectOBS() {
         if (ws) ws.close();
-        
         const ip = document.getElementById("server-ip").value.trim();
-        const wsUrl = `ws://${ip}:4455`;
-        
-        ws = new WebSocket(wsUrl);
+        ws = new WebSocket(`ws://${ip}:4455`);
 
         ws.onopen = () => console.log("WebSocket 已連接");
 
@@ -162,9 +165,10 @@
             document.getElementById("conn-status").innerText = "未連線";
             document.getElementById("conn-status").style.color = "var(--danger-color)";
             clearInterval(refreshTimer);
+            isAudioListBuilt = false;
         };
 
-        ws.onerror = () => alert("連接失敗，請檢查 IP 或 4455 連接埠設定。");
+        ws.onerror = () => alert("連接失敗，請檢查 IP 或 OBS 4455 連接埠設定。");
     }
 
     function sendRequest(requestType, requestData = {}, requestId = null) {
@@ -177,27 +181,56 @@
     }
 
     function handleMessage(msg) {
-        if (msg.op === 0) { // Hello
-            ws.send(JSON.stringify({ op: 1, d: { rpcVersion: 1, eventSubscriptions: 33 } }));
+        // Opcode 0: Hello
+        if (msg.op === 0) {
+            // 訂閱事件 (新增 InputVolumeChanged, InputMuteStateChanged 等)
+            ws.send(JSON.stringify({ op: 1, d: { rpcVersion: 1, eventSubscriptions: 33 | 64 } }));
         }
 
-        if (msg.op === 2) { // Identified
+        // Opcode 2: Identified
+        if (msg.op === 2) {
             document.getElementById("conn-status").innerText = "已連線";
             document.getElementById("conn-status").style.color = "var(--success-color)";
             
-            refreshData();
+            // 初始化數據
+            sendRequest("GetSceneList");
+            sendRequest("GetInputList");
+            
+            // 1秒定期獲取狀態資訊 (只抓串流狀態，不刷 DOM)
             clearInterval(refreshTimer);
-            refreshTimer = setInterval(refreshData, 1000); // 1秒定時刷新數據
+            refreshTimer = setInterval(() => {
+                sendRequest("GetStreamStatus");
+                sendRequest("GetRecordStatus");
+                if (!isInteracting) {
+                    refreshAudioValues(); // 只更新數據，不重造 DOM
+                }
+            }, 1000);
         }
 
-        if (msg.op === 5) { // Events
-            const { eventType } = msg.d;
-            if (["CurrentProgramSceneChanged", "RecordStateChanged", "StreamStateChanged", "SceneItemEnableStateChanged"].includes(eventType)) {
-                refreshData();
+        // Opcode 5: 事件推播即時反應
+        if (msg.op === 5) {
+            const { eventType, eventData } = msg.d;
+            if (eventType === "CurrentProgramSceneChanged") {
+                currentSceneName = eventData.sceneName;
+                sendRequest("GetSceneList");
+            }
+            if (eventType === "SceneItemEnableStateChanged") {
+                // 即時改變按鈕狀態
+                updateSourceVisibilityUI(eventData.sceneItemId, eventData.sceneItemEnabled);
+            }
+            if (eventType === "InputMuteStateChanged") {
+                updateMuteUI(eventData.inputName, eventData.inputMuted);
+            }
+            if (eventType === "InputVolumeChanged" && !isInteracting) {
+                updateVolumeUI(eventData.inputName, eventData.inputVolumeMul);
+            }
+            if (eventType === "InputAudioBalanceChanged" && !isInteracting) {
+                updateBalanceUI(eventData.inputName, eventData.inputAudioBalance);
             }
         }
 
-        if (msg.op === 7 && msg.d.requestStatus.result) { // Response
+        // Opcode 7: Response
+        if (msg.op === 7 && msg.d.requestStatus.result) {
             const reqType = msg.d.requestType;
             const resData = msg.d.responseData;
             const reqId = msg.d.requestId;
@@ -222,54 +255,46 @@
             }
 
             if (reqType === "GetSceneList") {
-                renderSceneList(resData.scenes, resData.currentProgramSceneName);
-                sendRequest("GetSceneItemList", { sceneName: resData.currentProgramSceneName });
+                currentSceneName = resData.currentProgramSceneName;
+                renderSceneList(resData.scenes, currentSceneName);
+                sendRequest("GetSceneItemList", { sceneName: currentSceneName });
             }
 
-            if (reqType === "GetSceneItemList") renderSourceList(resData.sceneItems);
-            if (reqType === "GetInputList") renderAudioList(resData.inputs);
-
-            // 處理音軌進階數據
-            if (reqId.startsWith("AudioDetails_")) {
-                const inputName = reqId.replace("AudioDetails_", "");
-                updateAudioDetails(inputName, resData);
+            if (reqType === "GetSceneItemList") {
+                renderSourceList(resData.sceneItems);
             }
+
+            if (reqType === "GetInputList") {
+                // 只有第一次連線才建立音軌清單 DOM，防止滑動時閃爍
+                if (!isAudioListBuilt) {
+                    buildAudioListDOM(resData.inputs);
+                    isAudioListBuilt = true;
+                }
+                refreshAudioValues();
+            }
+
+            // 更新個案音量/平衡數據
+            if (reqId.startsWith("AudioVol_")) updateVolumeUI(reqId.replace("AudioVol_", ""), resData.inputVolumeMul);
+            if (reqId.startsWith("AudioMute_")) updateMuteUI(reqId.replace("AudioMute_", ""), resData.inputMuted);
+            if (reqId.startsWith("AudioBal_")) updateBalanceUI(reqId.replace("AudioBal_", ""), resData.inputAudioBalance);
+            if (reqId.startsWith("AudioMon_")) updateMonitorUI(reqId.replace("AudioMon_", ""), resData.monitorType);
         }
     }
 
-    function refreshData() {
-        sendRequest("GetStreamStatus");
-        sendRequest("GetRecordStatus");
-        sendRequest("GetSceneList");
-        sendRequest("GetInputList");
-    }
-
-    /* --- 串流 / 錄影 控制 --- */
-    function toggleStream() { sendRequest(isStreaming ? "StopStream" : "StartStream"); }
-    function toggleRecord() { sendRequest(isRecording ? "StopRecord" : "StartRecord"); }
-
-    /* --- 切換 Tab 標籤頁 --- */
-    function switchTab(tabId, btn) {
-        document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-        document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
-        document.getElementById(tabId).classList.add('active');
-        btn.classList.add('active');
-    }
-
-    /* --- 1. 場景切換 --- */
-    function renderSceneList(scenes, currentScene) {
+    /* --- 1. 場景管理 --- */
+    function renderSceneList(scenes, activeScene) {
         const el = document.getElementById("scenes-list");
         el.innerHTML = "";
         scenes.forEach(s => {
             const li = document.createElement("li");
-            li.className = `scene-item ${s.sceneName === currentScene ? 'active' : ''}`;
+            li.className = `scene-item ${s.sceneName === activeScene ? 'active' : ''}`;
             li.innerText = s.sceneName;
             li.onclick = () => sendRequest("SetCurrentProgramScene", { sceneName: s.sceneName });
             el.appendChild(li);
         });
     }
 
-    /* --- 2. 來源 可見/隱藏 開關 --- */
+    /* --- 2. 來源管理 (顯示/隱藏修正) --- */
     function renderSourceList(sources) {
         const el = document.getElementById("sources-list");
         el.innerHTML = "";
@@ -279,7 +304,9 @@
             li.innerHTML = `
                 <div class="card-row">
                     <span>${item.sourceName}</span>
-                    <button class="icon-btn ${item.sceneItemEnabled ? 'visible' : ''}" onclick="toggleSourceVisible(${item.sceneItemId}, ${!item.sceneItemEnabled})">
+                    <button id="src-btn-${item.sceneItemId}" 
+                            class="icon-btn ${item.sceneItemEnabled ? 'visible' : ''}" 
+                            onclick="toggleSourceVisible(${item.sceneItemId}, ${!item.sceneItemEnabled})">
                         ${item.sceneItemEnabled ? '顯示中' : '已隱藏'}
                     </button>
                 </div>
@@ -288,44 +315,58 @@
         });
     }
 
+    // 正確修復：同時帶入 sceneName 與 sceneItemId 進行狀態設定
     function toggleSourceVisible(itemId, enable) {
-        // 需取得當前場景名稱
-        sendRequest("GetSceneList", {}, "GetSceneListForSource");
-        // 透過 API 變更顯示狀態
-        sendRequest("GetGroupSceneItemList", {}, "temp"); // 觸發即時事件刷新
-        // 簡化直接透過 SceneItemEnabled 處理
-        sendRequest("GetSceneList"); // 刷新
+        sendRequest("SetSceneItemEnabled", {
+            sceneName: currentSceneName,
+            sceneItemId: itemId,
+            sceneItemEnabled: enable
+        });
     }
 
-    /* --- 3. 音軌控制 (音量, 聲道, 監聽) --- */
-    function renderAudioList(inputs) {
+    function updateSourceVisibilityUI(itemId, enabled) {
+        const btn = document.getElementById(`src-btn-${itemId}`);
+        if (btn) {
+            btn.innerText = enabled ? '顯示中' : '已隱藏';
+            btn.className = `icon-btn ${enabled ? 'visible' : ''}`;
+            btn.setAttribute('onclick', `toggleSourceVisible(${itemId}, ${!enabled})`);
+        }
+    }
+
+    /* --- 3. 音軌控制 (解決閃爍、滑動卡頓、平衡失效) --- */
+    // (A) 只建立一次 DOM
+    function buildAudioListDOM(inputs) {
         const el = document.getElementById("audio-list");
         el.innerHTML = "";
 
-        inputs.filter(i => i.inputKind && (i.inputKind.includes("audio") || i.inputKind.includes("wasapi") || i.inputKind.includes("mic")))
-        .forEach(i => {
+        const audioInputs = inputs.filter(i => i.inputKind && (
+            i.inputKind.includes("audio") || i.inputKind.includes("wasapi") || i.inputKind.includes("mic")
+        ));
+
+        audioInputs.forEach(i => {
+            const name = i.inputName;
             const li = document.createElement("li");
             li.className = "card-item";
-            li.id = `audio-card-${i.inputName}`;
             li.innerHTML = `
                 <div class="card-row">
-                    <strong>${i.inputName}</strong>
-                    <button class="icon-btn" id="mute-btn-${i.inputName}" onclick="toggleMute('${i.inputName}')">開音</button>
+                    <strong>${name}</strong>
+                    <button class="icon-btn" id="mute-btn-${name}" onclick="toggleMute('${name}')">開音</button>
                 </div>
-                <!-- 音量調整 -->
                 <div class="slider-container">
-                    <span style="font-size:0.8em; width:35px">音量</span>
-                    <input type="range" id="vol-${i.inputName}" min="0" max="1" step="0.01" onchange="setVolume('${i.inputName}', this.value)">
+                    <span>音量</span>
+                    <input type="range" id="vol-${name}" min="0" max="1" step="0.01" 
+                           oninput="isInteracting=true" 
+                           onchange="setVolume('${name}', this.value)">
                 </div>
-                <!-- 聲道平衡 (Pan) -->
                 <div class="slider-container">
-                    <span style="font-size:0.8em; width:35px">平衡</span>
-                    <input type="range" id="pan-${i.inputName}" min="0" max="1" step="0.02" onchange="setPan('${i.inputName}', this.value)">
+                    <span>平衡</span>
+                    <input type="range" id="pan-${name}" min="0" max="1" step="0.01" 
+                           oninput="isInteracting=true" 
+                           onchange="setPan('${name}', this.value)">
                 </div>
-                <!-- 音訊監聽 -->
                 <div class="card-row">
                     <span style="font-size:0.85em; color:var(--text-sub)">音訊監聽</span>
-                    <select id="monitor-${i.inputName}" onchange="setMonitor('${i.inputName}', this.value)">
+                    <select id="monitor-${name}" onchange="setMonitor('${name}', this.value)">
                         <option value="OBS_MONITORING_TYPE_NONE">關閉監聽</option>
                         <option value="OBS_MONITORING_TYPE_MONITOR_ONLY">僅監聽 (不輸出)</option>
                         <option value="OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT">監聽並輸出</option>
@@ -333,42 +374,65 @@
                 </div>
             `;
             el.appendChild(li);
-
-            // 批次查詢音軌進階狀態
-            sendRequest("GetInputVolume", { inputName: i.inputName }, `AudioDetails_${i.inputName}`);
-            sendRequest("GetInputMute", { inputName: i.inputName }, `AudioDetails_${i.inputName}`);
-            sendRequest("GetInputAudioBalance", { inputName: i.inputName }, `AudioDetails_${i.inputName}`);
-            sendRequest("GetInputAudioMonitorType", { inputName: i.inputName }, `AudioDetails_${i.inputName}`);
         });
     }
 
-    function updateAudioDetails(name, data) {
-        if (data.inputMuted !== undefined) {
-            const btn = document.getElementById(`mute-btn-${name}`);
-            if (btn) {
-                btn.innerText = data.inputMuted ? "已靜音" : "開啟中";
-                btn.className = `icon-btn ${data.inputMuted ? 'active' : 'visible'}`;
-            }
-        }
-        if (data.inputVolumeMul !== undefined) {
-            const vol = document.getElementById(`vol-${name}`);
-            if (vol) vol.value = data.inputVolumeMul;
-        }
-        if (data.inputBalance !== undefined) {
-            const pan = document.getElementById(`pan-${name}`);
-            if (pan) pan.value = data.inputBalance;
-        }
-        if (data.monitorType !== undefined) {
-            const mon = document.getElementById(`monitor-${name}`);
-            if (mon) mon.value = data.monitorType;
-        }
+    // (B) 更新音軌資料 (發送請求)
+    function refreshAudioValues() {
+        document.querySelectorAll("[id^='vol-']").forEach(input => {
+            const name = input.id.replace("vol-", "");
+            sendRequest("GetInputVolume", { inputName: name }, `AudioVol_${name}`);
+            sendRequest("GetInputMute", { inputName: name }, `AudioMute_${name}`);
+            sendRequest("GetInputAudioBalance", { inputName: name }, `AudioBal_${name}`);
+            sendRequest("GetInputAudioMonitorType", { inputName: name }, `AudioMon_${name}`);
+        });
     }
 
-    /* 音軌 控制動作 API */
+    // (C) 僅即時更新 UI 元件，不重組 DOM
+    function updateVolumeUI(name, val) {
+        const el = document.getElementById(`vol-${name}`);
+        if (el && !isInteracting) el.value = val;
+    }
+    function updateBalanceUI(name, val) {
+        const el = document.getElementById(`pan-${name}`);
+        if (el && !isInteracting) el.value = val;
+    }
+    function updateMuteUI(name, isMuted) {
+        const btn = document.getElementById(`mute-btn-${name}`);
+        if (btn) {
+            btn.innerText = isMuted ? "已靜音" : "開啟中";
+            btn.className = `icon-btn ${isMuted ? 'muted' : 'visible'}`;
+        }
+    }
+    function updateMonitorUI(name, monType) {
+        const select = document.getElementById(`monitor-${name}`);
+        if (select) select.value = monType;
+    }
+
+    /* API 發送控制動作 */
+    function toggleStream() { sendRequest(isStreaming ? "StopStream" : "StartStream"); }
+    function toggleRecord() { sendRequest(isRecording ? "StopRecord" : "StartRecord"); }
     function toggleMute(name) { sendRequest("ToggleInputMute", { inputName: name }); }
-    function setVolume(name, val) { sendRequest("SetInputVolume", { inputName: name, inputVolumeMul: parseFloat(val) }); }
-    function setPan(name, val) { sendRequest("SetInputAudioBalance", { inputName: name, inputBalance: parseFloat(val) }); }
-    function setMonitor(name, val) { sendRequest("SetInputAudioMonitorType", { inputName: name, monitorType: val }); }
+    
+    function setVolume(name, val) { 
+        isInteracting = false; 
+        sendRequest("SetInputVolume", { inputName: name, inputVolumeMul: parseFloat(val) }); 
+    }
+    function setPan(name, val) { 
+        isInteracting = false; 
+        // 修復平衡 API：OBS 規範範圍為 0.0 ~ 1.0
+        sendRequest("SetInputAudioBalance", { inputName: name, inputAudioBalance: parseFloat(val) }); 
+    }
+    function setMonitor(name, val) { 
+        sendRequest("SetInputAudioMonitorType", { inputName: name, monitorType: val }); 
+    }
+
+    function switchTab(tabId, btn) {
+        document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+        document.getElementById(tabId).classList.add('active');
+        btn.classList.add('active');
+    }
 </script>
 </body>
 </html>
