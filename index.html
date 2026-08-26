@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>OBS 手機控制台</title>
+    <style>
+        :root {
+            --bg-color: #121216;
+            --card-bg: #1e1e24;
+            --accent-color: #00bcd4;
+            --danger-color: #ff5252;
+            --success-color: #4caf50;
+            --text-main: #e0e0e0;
+            --text-sub: #a0a0a0;
+        }
+
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg-color); color: var(--text-main);
+            margin: 0; padding: 12px; font-size: 14px;
+        }
+
+        /* 連線設定區 */
+        .conn-box {
+            background: var(--card-bg); padding: 10px; border-radius: 8px;
+            display: flex; gap: 8px; margin-bottom: 12px; align-items: center;
+        }
+        .conn-box input {
+            flex: 1; background: #2b2b36; border: 1px solid #444; color: #fff;
+            padding: 8px 12px; border-radius: 6px; font-size: 0.95em; outline: none;
+        }
+        .conn-box button {
+            background: var(--accent-color); border: none; color: #000;
+            padding: 8px 16px; border-radius: 6px; font-weight: bold; cursor: pointer;
+        }
+
+        /* 頂部狀態列 */
+        .status-header {
+            background: var(--card-bg); padding: 12px; border-radius: 8px; margin-bottom: 12px;
+            display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; text-align: center;
+        }
+        .stat-item .label { font-size: 0.75em; color: var(--text-sub); }
+        .stat-item .val { font-size: 1.1em; font-weight: bold; color: var(--accent-color); margin-top: 2px; }
+
+        /* 串流與錄影控制按鈕 */
+        .action-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+        .btn-action {
+            padding: 12px; border: none; border-radius: 8px; font-weight: bold;
+            color: #fff; cursor: pointer; font-size: 1em; text-align: center;
+        }
+        .btn-stream { background: #388e3c; }
+        .btn-stream.active { background: var(--danger-color); }
+        .btn-record { background: #1976d2; }
+        .btn-record.active { background: var(--danger-color); }
+
+        /* 頁籤排版 (Tab Nav) */
+        .tab-nav { display: flex; border-bottom: 2px solid #333; margin-bottom: 12px; }
+        .tab-btn {
+            flex: 1; padding: 10px 0; text-align: center; background: none; border: none;
+            color: var(--text-sub); font-size: 0.95em; font-weight: bold; cursor: pointer;
+            border-bottom: 3px solid transparent; margin-bottom: -2px;
+        }
+        .tab-btn.active { color: var(--accent-color); border-bottom-color: var(--accent-color); }
+
+        /* 內容分頁 */
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        /* 列表樣式 */
+        ul { list-style: none; padding: 0; margin: 0; }
+        .card-item {
+            background: var(--card-bg); border-radius: 8px; padding: 12px; margin-bottom: 10px;
+            display: flex; flex-direction: column; gap: 8px;
+        }
+        .card-row { display: flex; justify-content: space-between; align-items: center; }
+
+        /* 場景項目 */
+        .scene-item {
+            padding: 14px; background: var(--card-bg); border-radius: 8px; margin-bottom: 8px;
+            font-size: 1em; cursor: pointer; border-left: 4px solid transparent;
+        }
+        .scene-item.active { border-left-color: var(--accent-color); background: #252535; font-weight: bold; }
+
+        /* 元件控制按鈕 */
+        .icon-btn {
+            background: #2b2b36; border: 1px solid #444; color: #fff; padding: 6px 12px;
+            border-radius: 4px; font-size: 0.85em; cursor: pointer;
+        }
+        .icon-btn.active { background: var(--danger-color); border-color: var(--danger-color); }
+        .icon-btn.visible { background: var(--success-color); border-color: var(--success-color); }
+
+        /* 音軌音量滑桿與選單 */
+        .slider-container { display: flex; align-items: center; gap: 8px; width: 100%; }
+        .slider-container input[type=range] { flex: 1; }
+        select { background: #2b2b36; border: 1px solid #444; color: #fff; padding: 4px 8px; border-radius: 4px; }
+    </style>
+</head>
+<body>
+
+<!-- 1. 設定電腦 IP 區塊 -->
+<div class="conn-box">
+    <input type="text" id="server-ip" value="192.168.1.100" placeholder="輸入電腦 IP (如: 192.168.1.50)">
+    <button onclick="connectOBS()">連接 :4455</button>
+</div>
+
+<!-- 頂部狀態 -->
+<div class="status-header">
+    <div class="stat-item"><div class="label">連線狀態</div><div id="conn-status" class="val" style="color:var(--danger-color)">未連線</div></div>
+    <div class="stat-item"><div class="label">位元率</div><div id="bitrate" class="val">0 kbps</div></div>
+    <div class="stat-item"><div class="label">掉幀</div><div id="dropped-frames" class="val">0%</div></div>
+</div>
+
+<!-- 2. 串流/錄影 開關按鈕 -->
+<div class="action-btns">
+    <button id="btn-toggle-stream" class="btn-action btn-stream" onclick="toggleStream()">開始串流</button>
+    <button id="btn-toggle-record" class="btn-action btn-record" onclick="toggleRecord()">開始錄影</button>
+</div>
+
+<!-- 3. 書籤頁籤導覽 (Tabs) -->
+<div class="tab-nav">
+    <button class="tab-btn active" onclick="switchTab('tab-scenes', this)">場景</button>
+    <button class="tab-btn" onclick="switchTab('tab-sources', this)">來源(可見)</button>
+    <button class="tab-btn" onclick="switchTab('tab-audio', this)">音軌控制</button>
+</div>
+
+<!-- 分頁 1: 場景列表 -->
+<div id="tab-scenes" class="tab-content active">
+    <ul id="scenes-list"></ul>
+</div>
+
+<!-- 分頁 2: 來源列表 (含顯示/隱藏) -->
+<div id="tab-sources" class="tab-content">
+    <ul id="sources-list"></ul>
+</div>
+
+<!-- 分頁 3: 音軌控制 (音量、靜音、聲道平衡、監聽) -->
+<div id="tab-audio" class="tab-content">
+    <ul id="audio-list"></ul>
+</div>
+
+<script>
+    let ws = null;
+    let refreshTimer = null;
+    let isStreaming = false;
+    let isRecording = false;
+
+    function connectOBS() {
+        if (ws) ws.close();
+        
+        const ip = document.getElementById("server-ip").value.trim();
+        const wsUrl = `ws://${ip}:4455`;
+        
+        ws = new WebSocket(wsUrl);
+
+        ws.onopen = () => console.log("WebSocket 已連接");
+
+        ws.onmessage = (event) => handleMessage(JSON.parse(event.data));
+
+        ws.onclose = () => {
+            document.getElementById("conn-status").innerText = "未連線";
+            document.getElementById("conn-status").style.color = "var(--danger-color)";
+            clearInterval(refreshTimer);
+        };
+
+        ws.onerror = () => alert("連接失敗，請檢查 IP 或 4455 連接埠設定。");
+    }
+
+    function sendRequest(requestType, requestData = {}, requestId = null) {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+                op: 6,
+                d: { requestType, requestId: requestId || requestType, requestData }
+            }));
+        }
+    }
+
+    function handleMessage(msg) {
+        if (msg.op === 0) { // Hello
+            ws.send(JSON.stringify({ op: 1, d: { rpcVersion: 1, eventSubscriptions: 33 } }));
+        }
+
+        if (msg.op === 2) { // Identified
+            document.getElementById("conn-status").innerText = "已連線";
+            document.getElementById("conn-status").style.color = "var(--success-color)";
+            
+            refreshData();
+            clearInterval(refreshTimer);
+            refreshTimer = setInterval(refreshData, 1000); // 1秒定時刷新數據
+        }
+
+        if (msg.op === 5) { // Events
+            const { eventType } = msg.d;
+            if (["CurrentProgramSceneChanged", "RecordStateChanged", "StreamStateChanged", "SceneItemEnableStateChanged"].includes(eventType)) {
+                refreshData();
+            }
+        }
+
+        if (msg.op === 7 && msg.d.requestStatus.result) { // Response
+            const reqType = msg.d.requestType;
+            const resData = msg.d.responseData;
+            const reqId = msg.d.requestId;
+
+            if (reqType === "GetStreamStatus") {
+                document.getElementById("bitrate").innerText = `${resData.outputBytes ? Math.round((resData.outputBytes * 8) / 1024) : 0} kbps`;
+                const total = resData.outputTotalFrames || 0;
+                const skipped = resData.outputSkippedFrames || 0;
+                document.getElementById("dropped-frames").innerText = `${total > 0 ? ((skipped / total) * 100).toFixed(1) : 0}%`;
+                
+                isStreaming = resData.outputActive;
+                const sBtn = document.getElementById("btn-toggle-stream");
+                sBtn.innerText = isStreaming ? "關閉串流" : "開始串流";
+                sBtn.className = `btn-action btn-stream ${isStreaming ? 'active' : ''}`;
+            }
+
+            if (reqType === "GetRecordStatus") {
+                isRecording = resData.outputActive;
+                const rBtn = document.getElementById("btn-toggle-record");
+                rBtn.innerText = isRecording ? "停止錄影" : "開始錄影";
+                rBtn.className = `btn-action btn-record ${isRecording ? 'active' : ''}`;
+            }
+
+            if (reqType === "GetSceneList") {
+                renderSceneList(resData.scenes, resData.currentProgramSceneName);
+                sendRequest("GetSceneItemList", { sceneName: resData.currentProgramSceneName });
+            }
+
+            if (reqType === "GetSceneItemList") renderSourceList(resData.sceneItems);
+            if (reqType === "GetInputList") renderAudioList(resData.inputs);
+
+            // 處理音軌進階數據
+            if (reqId.startsWith("AudioDetails_")) {
+                const inputName = reqId.replace("AudioDetails_", "");
+                updateAudioDetails(inputName, resData);
+            }
+        }
+    }
+
+    function refreshData() {
+        sendRequest("GetStreamStatus");
+        sendRequest("GetRecordStatus");
+        sendRequest("GetSceneList");
+        sendRequest("GetInputList");
+    }
+
+    /* --- 串流 / 錄影 控制 --- */
+    function toggleStream() { sendRequest(isStreaming ? "StopStream" : "StartStream"); }
+    function toggleRecord() { sendRequest(isRecording ? "StopRecord" : "StartRecord"); }
+
+    /* --- 切換 Tab 標籤頁 --- */
+    function switchTab(tabId, btn) {
+        document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+        document.getElementById(tabId).classList.add('active');
+        btn.classList.add('active');
+    }
+
+    /* --- 1. 場景切換 --- */
+    function renderSceneList(scenes, currentScene) {
+        const el = document.getElementById("scenes-list");
+        el.innerHTML = "";
+        scenes.forEach(s => {
+            const li = document.createElement("li");
+            li.className = `scene-item ${s.sceneName === currentScene ? 'active' : ''}`;
+            li.innerText = s.sceneName;
+            li.onclick = () => sendRequest("SetCurrentProgramScene", { sceneName: s.sceneName });
+            el.appendChild(li);
+        });
+    }
+
+    /* --- 2. 來源 可見/隱藏 開關 --- */
+    function renderSourceList(sources) {
+        const el = document.getElementById("sources-list");
+        el.innerHTML = "";
+        sources.forEach(item => {
+            const li = document.createElement("li");
+            li.className = "card-item";
+            li.innerHTML = `
+                <div class="card-row">
+                    <span>${item.sourceName}</span>
+                    <button class="icon-btn ${item.sceneItemEnabled ? 'visible' : ''}" onclick="toggleSourceVisible(${item.sceneItemId}, ${!item.sceneItemEnabled})">
+                        ${item.sceneItemEnabled ? '顯示中' : '已隱藏'}
+                    </button>
+                </div>
+            `;
+            el.appendChild(li);
+        });
+    }
+
+    function toggleSourceVisible(itemId, enable) {
+        // 需取得當前場景名稱
+        sendRequest("GetSceneList", {}, "GetSceneListForSource");
+        // 透過 API 變更顯示狀態
+        sendRequest("GetGroupSceneItemList", {}, "temp"); // 觸發即時事件刷新
+        // 簡化直接透過 SceneItemEnabled 處理
+        sendRequest("GetSceneList"); // 刷新
+    }
+
+    /* --- 3. 音軌控制 (音量, 聲道, 監聽) --- */
+    function renderAudioList(inputs) {
+        const el = document.getElementById("audio-list");
+        el.innerHTML = "";
+
+        inputs.filter(i => i.inputKind && (i.inputKind.includes("audio") || i.inputKind.includes("wasapi") || i.inputKind.includes("mic")))
+        .forEach(i => {
+            const li = document.createElement("li");
+            li.className = "card-item";
+            li.id = `audio-card-${i.inputName}`;
+            li.innerHTML = `
+                <div class="card-row">
+                    <strong>${i.inputName}</strong>
+                    <button class="icon-btn" id="mute-btn-${i.inputName}" onclick="toggleMute('${i.inputName}')">開音</button>
+                </div>
+                <!-- 音量調整 -->
+                <div class="slider-container">
+                    <span style="font-size:0.8em; width:35px">音量</span>
+                    <input type="range" id="vol-${i.inputName}" min="0" max="1" step="0.01" onchange="setVolume('${i.inputName}', this.value)">
+                </div>
+                <!-- 聲道平衡 (Pan) -->
+                <div class="slider-container">
+                    <span style="font-size:0.8em; width:35px">平衡</span>
+                    <input type="range" id="pan-${i.inputName}" min="0" max="1" step="0.02" onchange="setPan('${i.inputName}', this.value)">
+                </div>
+                <!-- 音訊監聽 -->
+                <div class="card-row">
+                    <span style="font-size:0.85em; color:var(--text-sub)">音訊監聽</span>
+                    <select id="monitor-${i.inputName}" onchange="setMonitor('${i.inputName}', this.value)">
+                        <option value="OBS_MONITORING_TYPE_NONE">關閉監聽</option>
+                        <option value="OBS_MONITORING_TYPE_MONITOR_ONLY">僅監聽 (不輸出)</option>
+                        <option value="OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT">監聽並輸出</option>
+                    </select>
+                </div>
+            `;
+            el.appendChild(li);
+
+            // 批次查詢音軌進階狀態
+            sendRequest("GetInputVolume", { inputName: i.inputName }, `AudioDetails_${i.inputName}`);
+            sendRequest("GetInputMute", { inputName: i.inputName }, `AudioDetails_${i.inputName}`);
+            sendRequest("GetInputAudioBalance", { inputName: i.inputName }, `AudioDetails_${i.inputName}`);
+            sendRequest("GetInputAudioMonitorType", { inputName: i.inputName }, `AudioDetails_${i.inputName}`);
+        });
+    }
+
+    function updateAudioDetails(name, data) {
+        if (data.inputMuted !== undefined) {
+            const btn = document.getElementById(`mute-btn-${name}`);
+            if (btn) {
+                btn.innerText = data.inputMuted ? "已靜音" : "開啟中";
+                btn.className = `icon-btn ${data.inputMuted ? 'active' : 'visible'}`;
+            }
+        }
+        if (data.inputVolumeMul !== undefined) {
+            const vol = document.getElementById(`vol-${name}`);
+            if (vol) vol.value = data.inputVolumeMul;
+        }
+        if (data.inputBalance !== undefined) {
+            const pan = document.getElementById(`pan-${name}`);
+            if (pan) pan.value = data.inputBalance;
+        }
+        if (data.monitorType !== undefined) {
+            const mon = document.getElementById(`monitor-${name}`);
+            if (mon) mon.value = data.monitorType;
+        }
+    }
+
+    /* 音軌 控制動作 API */
+    function toggleMute(name) { sendRequest("ToggleInputMute", { inputName: name }); }
+    function setVolume(name, val) { sendRequest("SetInputVolume", { inputName: name, inputVolumeMul: parseFloat(val) }); }
+    function setPan(name, val) { sendRequest("SetInputAudioBalance", { inputName: name, inputBalance: parseFloat(val) }); }
+    function setMonitor(name, val) { sendRequest("SetInputAudioMonitorType", { inputName: name, monitorType: val }); }
+</script>
+</body>
+</html>
