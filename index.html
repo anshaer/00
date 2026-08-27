@@ -24,22 +24,39 @@
             display: flex; flex-direction: column; min-height: 100vh;
         }
 
-        /* 頁面主要內容區域 */
         .main-content { flex: 1; }
 
-        /* 連線設定區 */
-        .conn-box {
-            background: var(--card-bg); padding: 10px; border-radius: 8px;
-            display: flex; gap: 8px; margin-bottom: 12px; align-items: center;
+        /* 收合式連線設定面板 */
+        .collapsible-box {
+            background: var(--card-bg); border-radius: 8px; margin-bottom: 12px;
+            overflow: hidden; border: 1px solid #333;
         }
-        .conn-box input {
+        .collapsible-header {
+            padding: 12px; background: #252530; cursor: pointer;
+            display: flex; justify-content: space-between; align-items: center;
+            font-weight: bold; color: var(--accent-color); font-size: 0.95em;
+        }
+        .collapsible-header .arrow { transition: transform 0.2s ease; }
+        .collapsible-header.open .arrow { transform: rotate(180deg); }
+        .collapsible-body {
+            padding: 12px; display: none; flex-direction: column; gap: 10px;
+            background: var(--card-bg);
+        }
+        .collapsible-body.show { display: flex; }
+
+        .input-row { display: flex; align-items: center; gap: 8px; }
+        .input-row label { width: 65px; font-size: 0.85em; color: var(--text-sub); }
+        .input-row input {
             flex: 1; background: #2b2b36; border: 1px solid #444; color: #fff;
-            padding: 8px 12px; border-radius: 6px; font-size: 0.95em; outline: none;
+            padding: 8px 12px; border-radius: 6px; font-size: 0.9em; outline: none;
         }
-        .conn-box button {
+
+        .btn-connect {
             background: var(--accent-color); border: none; color: #000;
-            padding: 8px 16px; border-radius: 6px; font-weight: bold; cursor: pointer;
+            padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer;
+            text-align: center; font-size: 0.95em; margin-top: 4px;
         }
+        .btn-connect:active { opacity: 0.8; }
 
         /* 頂部狀態列 */
         .status-header {
@@ -143,15 +160,36 @@
             border-top: 1px solid #2b2b36; font-size: 0.8em; color: var(--text-sub);
         }
     </style>
+    <!-- 引入 SHA-256 加密庫（用於 OBS WebSocket 密碼驗證） -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
 </head>
 <body>
 
 <div class="main-content">
-    <div class="conn-box">
-        <input type="text" id="server-ip" value="192.168.1.200" placeholder="輸入電腦 IP">
-        <button onclick="connectOBS()">連接 :4455</button>
+    <!-- 可收合連線設定區塊 -->
+    <div class="collapsible-box">
+        <div class="collapsible-header open" id="conn-header" onclick="toggleConnPanel()">
+            <span>⚙ 連線與進階設定</span>
+            <span class="arrow">▼</span>
+        </div>
+        <div class="collapsible-body show" id="conn-body">
+            <div class="input-row">
+                <label>電腦 IP:</label>
+                <input type="text" id="server-ip" value="192.168.1.200" placeholder="例: 192.168.1.100">
+            </div>
+            <div class="input-row">
+                <label>連接埠:</label>
+                <input type="number" id="server-port" value="4455" placeholder="預設 4455">
+            </div>
+            <div class="input-row">
+                <label>連線密碼:</label>
+                <input type="password" id="server-pass" placeholder="若無啟用密碼請留空">
+            </div>
+            <button class="btn-connect" onclick="connectOBS()">建立連線</button>
+        </div>
     </div>
 
+    <!-- 頂部狀態 -->
     <div class="status-header">
         <div class="stat-item"><div class="label">連線狀態</div><div id="conn-status" class="val" style="color:var(--danger-color)">未連線</div></div>
         <div class="stat-item"><div class="label">輸出畫質</div><div id="video-res" class="val">--</div></div>
@@ -159,11 +197,13 @@
         <div class="stat-item"><div class="label">掉幀</div><div id="dropped-frames" class="val">0%</div></div>
     </div>
 
+    <!-- 串流/錄影 開關 -->
     <div class="action-btns">
         <button id="btn-toggle-stream" class="btn-action btn-stream" onclick="toggleStream()">開始串流</button>
         <button id="btn-toggle-record" class="btn-action btn-record" onclick="toggleRecord()">開始錄影</button>
     </div>
 
+    <!-- 頁籤導覽 + 刷新按鈕 -->
     <div class="tab-nav-container">
         <div class="tab-nav">
             <button class="tab-btn active" onclick="switchTab('tab-scenes', this)">場景</button>
@@ -173,10 +213,12 @@
         <button class="btn-refresh" onclick="manualRefresh()">↻ 刷新</button>
     </div>
 
+    <!-- 分頁 1: 場景列表 -->
     <div id="tab-scenes" class="tab-content active">
         <ul id="scenes-list"></ul>
     </div>
 
+    <!-- 分頁 2: 畫面來源 -->
     <div id="tab-sources" class="tab-content">
         <div class="card-item upload-card">
             <strong>新增手機圖片來源</strong>
@@ -188,13 +230,15 @@
         <ul id="sources-list"></ul>
     </div>
 
+    <!-- 分頁 3: 音軌控制 -->
     <div id="tab-audio" class="tab-content">
         <ul id="audio-list"></ul>
     </div>
 </div>
 
+<!-- 頁尾版權宣告 -->
 <footer class="footer">
-    &copy; anshaer.com & 早.cc & Anaher All Rights Reserved
+    &copy; anshaer.com & 早.cc & Anaher
 </footer>
 
 <script>
@@ -208,12 +252,23 @@
     let sourceRatios = {};
     let audioInputNames = new Set();
 
+    /* 收合面板切換 */
+    function toggleConnPanel() {
+        const header = document.getElementById("conn-header");
+        const body = document.getElementById("conn-body");
+        header.classList.toggle("open");
+        body.classList.toggle("show");
+    }
+
+    /* 連線與密碼驗證邏輯 */
     function connectOBS() {
         if (ws) ws.close();
         const ip = document.getElementById("server-ip").value.trim();
-        ws = new WebSocket(`ws://${ip}:4455`);
+        const port = document.getElementById("server-port").value.trim() || "4455";
 
-        ws.onopen = () => console.log("WebSocket 已連接");
+        ws = new WebSocket(`ws://${ip}:${port}`);
+
+        ws.onopen = () => console.log("WebSocket 已連接，等待驗證...");
         ws.onmessage = (event) => handleMessage(JSON.parse(event.data));
         ws.onclose = () => {
             document.getElementById("conn-status").innerText = "未連線";
@@ -221,36 +276,49 @@
             document.getElementById("video-res").innerText = "--";
             clearInterval(refreshTimer);
         };
-        ws.onerror = () => alert("連接失敗，請確認 IP 或 OBS WebSocket 4455 設定。");
-    }
-
-    function sendRequest(requestType, requestData = {}, requestId = null) {
-        if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({
-                op: 6,
-                d: { requestType, requestId: requestId || requestType, requestData }
-            }));
-        }
-    }
-
-    function manualRefresh() {
-        if (!ws || ws.readyState !== WebSocket.OPEN) return;
-        sendRequest("GetVideoSettings");
-        sendRequest("GetSceneList");
-        sendRequest("GetInputList");
-        sendRequest("GetStreamStatus");
-        sendRequest("GetRecordStatus");
+        ws.onerror = () => alert("連接失敗！請確認 IP、Port 是否正確，或檢查 OBS WebSocket 是否開啟。");
     }
 
     function handleMessage(msg) {
+        // OpCode 0: Hello 訊息 (處理密碼 Challenge)
         if (msg.op === 0) {
-            ws.send(JSON.stringify({ op: 1, d: { rpcVersion: 1, eventSubscriptions: 255 } }));
+            const password = document.getElementById("server-pass").value;
+            let identifyPayload = { op: 1, d: { rpcVersion: 1, eventSubscriptions: 255 } };
+
+            // 若 OBS 設定了密碼需求
+            if (msg.d.authentication) {
+                if (!password) {
+                    alert("OBS 設有連線密碼，請填寫密碼後重新連線！");
+                    ws.close();
+                    return;
+                }
+
+                const { salt, challenge } = msg.d.authentication;
+                
+                // SHA-256 驗證演算：Secret = SHA256(password + salt)
+                const secretHash = CryptoJS.SHA256(password + salt).toString(CryptoJS.enc.Base64);
+                // AuthResponse = SHA256(secretHash + challenge)
+                const authResponse = CryptoJS.SHA256(secretHash + challenge).toString(CryptoJS.enc.Base64);
+
+                identifyPayload.d.authentication = authResponse;
+            }
+
+            ws.send(JSON.stringify(identifyPayload));
         }
 
+        // OpCode 2: Identified (驗證通過，連線成功)
         if (msg.op === 2) {
             document.getElementById("conn-status").innerText = "已連線";
             document.getElementById("conn-status").style.color = "var(--success-color)";
             
+            // 連線成功後自動收合設定面板
+            const header = document.getElementById("conn-header");
+            const body = document.getElementById("conn-body");
+            if (header.classList.contains("open")) {
+                header.classList.remove("open");
+                body.classList.remove("show");
+            }
+
             manualRefresh();
             
             clearInterval(refreshTimer);
@@ -355,7 +423,25 @@
         }
     }
 
-    /* 上傳圖片 + 確認彈窗 */
+    function sendRequest(requestType, requestData = {}, requestId = null) {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+                op: 6,
+                d: { requestType, requestId: requestId || requestType, requestData }
+            }));
+        }
+    }
+
+    function manualRefresh() {
+        if (!ws || ws.readyState !== WebSocket.OPEN) return;
+        sendRequest("GetVideoSettings");
+        sendRequest("GetSceneList");
+        sendRequest("GetInputList");
+        sendRequest("GetStreamStatus");
+        sendRequest("GetRecordStatus");
+    }
+
+    /* 上傳圖片 */
     function uploadImageToOBS(fileInput) {
         const file = fileInput.files[0];
         if (!file) return;
