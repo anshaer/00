@@ -73,6 +73,14 @@
         }
         .btn-refresh:active { background: var(--accent-color); color: #000; }
 
+        /* 關鍵修復：強制嚴格隔離未選取的分頁頁面 */
+        .tab-content { 
+            display: none !important; 
+        }
+        .tab-content.active { 
+            display: block !important; 
+        }
+
         /* 列表與卡片 */
         ul { list-style: none; padding: 0; margin: 0; }
         .card-item {
@@ -193,7 +201,7 @@
     let isInteracting = false; 
 
     let sourceRatios = {};
-    let audioInputNames = new Set(); // 記錄所有音軌來源名稱，用於嚴格分離
+    let audioInputNames = new Set();
 
     function connectOBS() {
         if (ws) ws.close();
@@ -224,7 +232,7 @@
         if (!ws || ws.readyState !== WebSocket.OPEN) return;
         sendRequest("GetVideoSettings");
         sendRequest("GetSceneList");
-        sendRequest("GetInputList"); // 先抓音軌清單，建立 audioInputNames 名冊
+        sendRequest("GetInputList");
         sendRequest("GetStreamStatus");
         sendRequest("GetRecordStatus");
     }
@@ -309,7 +317,6 @@
             }
 
             if (reqType === "GetInputList") {
-                // 1. 整理所有的音軌名稱
                 audioInputNames.clear();
                 resData.inputs.forEach(i => {
                     const kind = (i.inputKind || "").toLowerCase();
@@ -317,11 +324,7 @@
                         audioInputNames.add(i.inputName);
                     }
                 });
-                
-                // 2. 建立音軌分頁 DOM
                 buildAudioListDOM(resData.inputs);
-
-                // 3. 取得音軌名冊後，再繪製畫面來源，確保不誤混
                 sendRequest("GetSceneItemList", { sceneName: currentSceneName });
             }
 
@@ -413,21 +416,23 @@
         });
     }
 
-    /* --- 2. 畫面來源列表 (嚴格比對：凡屬於 audioInputNames 的項目一律排查) --- */
+    function isAudioKind(kindStr) {
+        if (!kindStr) return false;
+        const k = kindStr.toLowerCase();
+        return k.includes("audio") || k.includes("wasapi") || k.includes("mic") || k.includes("sound");
+    }
+
+    /* --- 2. 畫面來源列表 --- */
     function renderSourceList(sources) {
         const el = document.getElementById("sources-list");
         el.innerHTML = "";
 
-        // 雙重過濾：比對 AudioInput 清單與 inputKind 關鍵字
         const visualSources = sources.filter(item => {
             const name = item.sourceName;
             const kind = (item.inputKind || "").toLowerCase();
 
-            // 如果該來源名稱出現在音軌清單中，直接過濾
             if (audioInputNames.has(name)) return false;
-
-            // 如果種類包含音訊關鍵字，也過濾
-            if (kind.includes("audio") || kind.includes("wasapi") || kind.includes("mic") || kind.includes("sound")) {
+            if (isAudioKind(kind) || name.includes("音效") || name.includes("麥克風") || name.includes("audio")) {
                 return false;
             }
             return true;
@@ -576,7 +581,7 @@
         }
     }
 
-    /* --- 3. 音軌控制 (僅顯示在音訊清單中的項目) --- */
+    /* --- 3. 音軌控制 --- */
     function buildAudioListDOM(inputs) {
         const el = document.getElementById("audio-list");
         el.innerHTML = "";
@@ -661,9 +666,14 @@
     function setPan(name, val) { sendRequest("SetInputAudioBalance", { inputName: name, inputAudioBalance: parseFloat(val) }); }
     function setMonitor(name, val) { sendRequest("SetInputAudioMonitorType", { inputName: name, monitorType: val }); }
 
+    /* 頁籤切換核心修復 */
     function switchTab(tabId, btn) {
-        document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-        document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+        const contents = document.querySelectorAll('.tab-content');
+        contents.forEach(el => el.classList.remove('active'));
+
+        const buttons = document.querySelectorAll('.tab-btn');
+        buttons.forEach(el => el.classList.remove('active'));
+
         document.getElementById(tabId).classList.add('active');
         btn.classList.add('active');
     }
