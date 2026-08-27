@@ -160,7 +160,7 @@
             border-top: 1px solid #2b2b36; font-size: 0.8em; color: var(--text-sub);
         }
     </style>
-    <!-- 引入 SHA-256 加密庫（用於 OBS WebSocket 密碼驗證） -->
+    <!-- Crypto-JS 用於 SHA-256 驗證 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
 </head>
 <body>
@@ -252,7 +252,6 @@
     let sourceRatios = {};
     let audioInputNames = new Set();
 
-    /* 收合面板切換 */
     function toggleConnPanel() {
         const header = document.getElementById("conn-header");
         const body = document.getElementById("conn-body");
@@ -260,7 +259,6 @@
         body.classList.toggle("show");
     }
 
-    /* 連線與密碼驗證邏輯 */
     function connectOBS() {
         if (ws) ws.close();
         const ip = document.getElementById("server-ip").value.trim();
@@ -280,12 +278,11 @@
     }
 
     function handleMessage(msg) {
-        // OpCode 0: Hello 訊息 (處理密碼 Challenge)
         if (msg.op === 0) {
             const password = document.getElementById("server-pass").value;
+            // eventSubscriptions 設為 255 (接收全訂閱事件)，並明確定義 Identify
             let identifyPayload = { op: 1, d: { rpcVersion: 1, eventSubscriptions: 255 } };
 
-            // 若 OBS 設定了密碼需求
             if (msg.d.authentication) {
                 if (!password) {
                     alert("OBS 設有連線密碼，請填寫密碼後重新連線！");
@@ -294,10 +291,7 @@
                 }
 
                 const { salt, challenge } = msg.d.authentication;
-                
-                // SHA-256 驗證演算：Secret = SHA256(password + salt)
                 const secretHash = CryptoJS.SHA256(password + salt).toString(CryptoJS.enc.Base64);
-                // AuthResponse = SHA256(secretHash + challenge)
                 const authResponse = CryptoJS.SHA256(secretHash + challenge).toString(CryptoJS.enc.Base64);
 
                 identifyPayload.d.authentication = authResponse;
@@ -306,12 +300,10 @@
             ws.send(JSON.stringify(identifyPayload));
         }
 
-        // OpCode 2: Identified (驗證通過，連線成功)
         if (msg.op === 2) {
             document.getElementById("conn-status").innerText = "已連線";
             document.getElementById("conn-status").style.color = "var(--success-color)";
             
-            // 連線成功後自動收合設定面板
             const header = document.getElementById("conn-header");
             const body = document.getElementById("conn-body");
             if (header.classList.contains("open")) {
@@ -354,72 +346,82 @@
             }
         }
 
-        if (msg.op === 7 && msg.d.requestStatus.result) {
+        // 回應處理
+        if (msg.op === 7) {
             const reqType = msg.d.requestType;
             const resData = msg.d.responseData;
             const reqId = msg.d.requestId;
+            const status = msg.d.requestStatus;
 
-            if (reqType === "GetVideoSettings") {
-                const fps = Math.round(resData.fpsNumerator / resData.fpsDenominator);
-                document.getElementById("video-res").innerText = `${resData.outputWidth}x${resData.outputHeight} p${fps}`;
-            }
-
-            if (reqType === "GetStreamStatus") {
-                document.getElementById("bitrate").innerText = `${resData.outputBytes ? Math.round((resData.outputBytes * 8) / 1024) : 0} kbps`;
-                const total = resData.outputTotalFrames || 0;
-                const skipped = resData.outputSkippedFrames || 0;
-                document.getElementById("dropped-frames").innerText = `${total > 0 ? ((skipped / total) * 100).toFixed(1) : 0}%`;
-                
-                isStreaming = resData.outputActive;
-                const sBtn = document.getElementById("btn-toggle-stream");
-                sBtn.innerText = isStreaming ? "關閉串流" : "開始串流";
-                sBtn.className = `btn-action btn-stream ${isStreaming ? 'active' : ''}`;
-            }
-
-            if (reqType === "GetRecordStatus") {
-                isRecording = resData.outputActive;
-                const rBtn = document.getElementById("btn-toggle-record");
-                rBtn.innerText = isRecording ? "停止錄影" : "開始錄影";
-                rBtn.className = `btn-action btn-record ${isRecording ? 'active' : ''}`;
-            }
-
-            if (reqType === "GetSceneList") {
-                currentSceneName = resData.currentProgramSceneName;
-                renderSceneList(resData.scenes, currentSceneName);
-                sendRequest("GetSceneItemList", { sceneName: currentSceneName });
-            }
-
-            if (reqType === "GetInputList") {
-                audioInputNames.clear();
-                resData.inputs.forEach(i => {
-                    const kind = (i.inputKind || "").toLowerCase();
-                    if (kind.includes("audio") || kind.includes("wasapi") || kind.includes("mic") || kind.includes("sound")) {
-                        audioInputNames.add(i.inputName);
-                    }
-                });
-                buildAudioListDOM(resData.inputs);
-                sendRequest("GetSceneItemList", { sceneName: currentSceneName });
-            }
-
-            if (reqType === "GetSceneItemList") {
-                renderSourceList(resData.sceneItems);
-            }
-
+            // 修復：捕捉創建來源時如果發生的權限問題或錯誤
             if (reqId === "CreateImageSource") {
                 document.getElementById("upload-btn").innerText = "選取照片並上傳至 OBS";
                 document.getElementById("upload-btn").disabled = false;
-                alert("圖片成功新增至 OBS 畫面！");
-                sendRequest("GetSceneItemList", { sceneName: currentSceneName });
+
+                if (status.result) {
+                    alert("圖片成功新增至 OBS 畫面！");
+                    sendRequest("GetSceneItemList", { sceneName: currentSceneName });
+                } else {
+                    alert("新增圖片失敗: " + (status.comment || "存取權限不足或參數錯誤"));
+                }
             }
 
-            if (reqId === "RemoveSceneItem") {
-                sendRequest("GetInputList");
-            }
+            if (status.result) {
+                if (reqType === "GetVideoSettings") {
+                    const fps = Math.round(resData.fpsNumerator / resData.fpsDenominator);
+                    document.getElementById("video-res").innerText = `${resData.outputWidth}x${resData.outputHeight} p${fps}`;
+                }
 
-            if (reqId.startsWith("InitVol_")) updateVolumeUI(reqId.replace("InitVol_", ""), resData.inputVolumeMul);
-            if (reqId.startsWith("InitMute_")) updateMuteUI(reqId.replace("InitMute_", ""), resData.inputMuted);
-            if (reqId.startsWith("InitBal_")) updateBalanceUI(reqId.replace("InitBal_", ""), resData.inputAudioBalance);
-            if (reqId.startsWith("InitMon_")) updateMonitorUI(reqId.replace("InitMon_", ""), resData.monitorType);
+                if (reqType === "GetStreamStatus") {
+                    document.getElementById("bitrate").innerText = `${resData.outputBytes ? Math.round((resData.outputBytes * 8) / 1024) : 0} kbps`;
+                    const total = resData.outputTotalFrames || 0;
+                    const skipped = resData.outputSkippedFrames || 0;
+                    document.getElementById("dropped-frames").innerText = `${total > 0 ? ((skipped / total) * 100).toFixed(1) : 0}%`;
+                    
+                    isStreaming = resData.outputActive;
+                    const sBtn = document.getElementById("btn-toggle-stream");
+                    sBtn.innerText = isStreaming ? "關閉串流" : "開始串流";
+                    sBtn.className = `btn-action btn-stream ${isStreaming ? 'active' : ''}`;
+                }
+
+                if (reqType === "GetRecordStatus") {
+                    isRecording = resData.outputActive;
+                    const rBtn = document.getElementById("btn-toggle-record");
+                    rBtn.innerText = isRecording ? "停止錄影" : "開始錄影";
+                    rBtn.className = `btn-action btn-record ${isRecording ? 'active' : ''}`;
+                }
+
+                if (reqType === "GetSceneList") {
+                    currentSceneName = resData.currentProgramSceneName;
+                    renderSceneList(resData.scenes, currentSceneName);
+                    sendRequest("GetSceneItemList", { sceneName: currentSceneName });
+                }
+
+                if (reqType === "GetInputList") {
+                    audioInputNames.clear();
+                    resData.inputs.forEach(i => {
+                        const kind = (i.inputKind || "").toLowerCase();
+                        if (kind.includes("audio") || kind.includes("wasapi") || kind.includes("mic") || kind.includes("sound")) {
+                            audioInputNames.add(i.inputName);
+                        }
+                    });
+                    buildAudioListDOM(resData.inputs);
+                    sendRequest("GetSceneItemList", { sceneName: currentSceneName });
+                }
+
+                if (reqType === "GetSceneItemList") {
+                    renderSourceList(resData.sceneItems);
+                }
+
+                if (reqId === "RemoveSceneItem") {
+                    sendRequest("GetInputList");
+                }
+
+                if (reqId.startsWith("InitVol_")) updateVolumeUI(reqId.replace("InitVol_", ""), resData.inputVolumeMul);
+                if (reqId.startsWith("InitMute_")) updateMuteUI(reqId.replace("InitMute_", ""), resData.inputMuted);
+                if (reqId.startsWith("InitBal_")) updateBalanceUI(reqId.replace("InitBal_", ""), resData.inputAudioBalance);
+                if (reqId.startsWith("InitMon_")) updateMonitorUI(reqId.replace("InitMon_", ""), resData.monitorType);
+            }
         }
     }
 
@@ -441,10 +443,16 @@
         sendRequest("GetRecordStatus");
     }
 
-    /* 上傳圖片 */
+    /* 修復版圖片上傳邏輯 */
     function uploadImageToOBS(fileInput) {
         const file = fileInput.files[0];
         if (!file) return;
+
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+            alert("請先連線至 OBS 再嘗試上傳！");
+            fileInput.value = "";
+            return;
+        }
 
         const isConfirmed = confirm(`確定要上傳「${file.name}」至 OBS 嗎？`);
         if (!isConfirmed) {
@@ -487,6 +495,7 @@
                 const compressedBase64 = canvas.toDataURL("image/jpeg", 0.7);
                 const htmlContent = `data:text/html;charset=utf-8,<html><head><style>body{margin:0;padding:0;overflow:hidden;background:transparent;display:flex;justify-content:center;align-items:center;height:100vh;}img{max-width:100%;max-height:100%;object-fit:contain;}</style></head><body><img src="${compressedBase64}"/></body></html>`;
 
+                // 發送 CreateInput 建立瀏覽器來源
                 sendRequest("CreateInput", {
                     sceneName: currentSceneName,
                     inputName: sourceName,
@@ -494,6 +503,11 @@
                     inputSettings: { url: htmlContent, width: width, height: height, css: "" },
                     sceneItemEnabled: true
                 }, "CreateImageSource");
+            };
+            img.onerror = function() {
+                alert("圖片載入解析失敗！");
+                btn.innerText = "選取照片並上傳至 OBS";
+                btn.disabled = false;
             };
             img.src = e.target.result;
         };
