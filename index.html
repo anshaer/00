@@ -66,7 +66,6 @@
         }
         .tab-btn.active { color: var(--accent-color); border-bottom-color: var(--accent-color); }
         
-        /* (2) 手動刷新按鈕 */
         .btn-refresh {
             background: #2b2b36; border: 1px solid var(--accent-color); color: var(--accent-color);
             padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer;
@@ -95,9 +94,6 @@
             display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
             background: #252530; padding: 8px; border-radius: 6px;
         }
-        .transform-box.disabled {
-            background: var(--disabled-color); opacity: 0.35; pointer-events: none;
-        }
         .ratio-row {
             grid-column: span 2; display: flex; align-items: center; gap: 6px;
             font-size: 0.8em; color: var(--accent-color); margin-bottom: 2px;
@@ -122,7 +118,6 @@
         .icon-btn.muted { background: var(--danger-color); border-color: var(--danger-color); }
         .icon-btn.visible { background: var(--success-color); border-color: var(--success-color); }
         
-        /* (1) 刪除按鈕樣式 */
         .btn-delete {
             background: #3a1a1a; border: 1px solid var(--danger-color); color: var(--danger-color);
             padding: 8px 10px; border-radius: 4px; font-size: 0.85em; cursor: pointer;
@@ -157,11 +152,11 @@
     <button id="btn-toggle-record" class="btn-action btn-record" onclick="toggleRecord()">開始錄影</button>
 </div>
 
-<!-- 頁籤導覽 + (2) 手動刷新按鈕 -->
+<!-- 頁籤導覽 + 刷新按鈕 -->
 <div class="tab-nav-container">
     <div class="tab-nav">
         <button class="tab-btn active" onclick="switchTab('tab-scenes', this)">場景</button>
-        <button class="tab-btn" onclick="switchTab('tab-sources', this)">來源與排版</button>
+        <button class="tab-btn" onclick="switchTab('tab-sources', this)">畫面來源</button>
         <button class="tab-btn" onclick="switchTab('tab-audio', this)">音軌控制</button>
     </div>
     <button class="btn-refresh" onclick="manualRefresh()">↻ 刷新</button>
@@ -172,7 +167,7 @@
     <ul id="scenes-list"></ul>
 </div>
 
-<!-- 分頁 2: 來源與排版 -->
+<!-- 分頁 2: 畫面來源 -->
 <div id="tab-sources" class="tab-content">
     <div class="card-item upload-card">
         <strong>新增手機圖片來源</strong>
@@ -224,7 +219,6 @@
         }
     }
 
-    /* (2) 全面手動刷新：同步電腦端最新的所有狀態 */
     function manualRefresh() {
         if (!ws || ws.readyState !== WebSocket.OPEN) return;
         sendRequest("GetVideoSettings");
@@ -273,7 +267,6 @@
             if (eventType === "InputAudioBalanceChanged" && !isInteracting) {
                 updateBalanceUI(eventData.inputName, eventData.inputAudioBalance);
             }
-            // OBS 畫面上刪除或新增元件時即時同步
             if (eventType === "SceneItemCreated" || eventType === "SceneItemRemoved") {
                 sendRequest("GetSceneItemList", { sceneName: currentSceneName });
             }
@@ -335,7 +328,6 @@
         }
     }
 
-    /* 圖片上傳 (Browser Source 極速穩定版) */
     function uploadImageToOBS(fileInput) {
         const file = fileInput.files[0];
         if (!file) return;
@@ -402,17 +394,25 @@
         });
     }
 
-    /* --- 2. 來源列表 (加入刪除鍵 + 確認彈窗) --- */
+    /* --- 2. 畫面來源列表 (過濾音效輸入) --- */
     function renderSourceList(sources) {
         const el = document.getElementById("sources-list");
         el.innerHTML = "";
 
-        sources.forEach(item => {
+        // 精準過濾音訊元件，只保留視覺畫面來源
+        const visualSources = sources.filter(item => {
+            const kind = (item.inputKind || "").toLowerCase();
+            return !(kind.includes("audio") || kind.includes("wasapi") || kind.includes("mic"));
+        });
+
+        if (visualSources.length === 0) {
+            el.innerHTML = `<li class="card-item" style="text-align:center; color:var(--text-sub);">當前場景無畫面來源</li>`;
+            return;
+        }
+
+        visualSources.forEach(item => {
             const li = document.createElement("li");
             li.className = "card-item";
-
-            const kind = (item.inputKind || "").toLowerCase();
-            const isAudioOnly = kind.includes("audio") || kind.includes("wasapi") || kind.includes("mic");
 
             const tf = item.sceneItemTransform || {};
             const width = Math.round(tf.boundsWidth || tf.sourceWidth || 100);
@@ -431,32 +431,31 @@
                                 onclick="toggleSourceVisible(${item.sceneItemId}, ${!item.sceneItemEnabled})">
                             ${item.sceneItemEnabled ? '顯示中' : '已隱藏'}
                         </button>
-                        <!-- (1) 刪除按鈕 -->
                         <button class="btn-delete" onclick="deleteSource(${item.sceneItemId}, '${item.sourceName}')">刪除</button>
                     </div>
                 </div>
 
-                <div class="transform-box ${isAudioOnly ? 'disabled' : ''}">
+                <div class="transform-box">
                     <div class="ratio-row">
-                        <input type="checkbox" id="lock-ratio-${item.sceneItemId}" checked ${isAudioOnly ? 'disabled' : ''}>
+                        <input type="checkbox" id="lock-ratio-${item.sceneItemId}" checked>
                         <label for="lock-ratio-${item.sceneItemId}">保持等比例調整</label>
                     </div>
 
                     <div class="input-group">
                         <span>寬W:</span>
-                        <input type="number" id="tf-w-${item.sceneItemId}" value="${width}" ${isAudioOnly ? 'disabled' : ''} onchange="applyTransform(${item.sceneItemId}, 'w')">
+                        <input type="number" id="tf-w-${item.sceneItemId}" value="${width}" onchange="applyTransform(${item.sceneItemId}, 'w')">
                     </div>
                     <div class="input-group">
                         <span>高H:</span>
-                        <input type="number" id="tf-h-${item.sceneItemId}" value="${height}" ${isAudioOnly ? 'disabled' : ''} onchange="applyTransform(${item.sceneItemId}, 'h')">
+                        <input type="number" id="tf-h-${item.sceneItemId}" value="${height}" onchange="applyTransform(${item.sceneItemId}, 'h')">
                     </div>
                     <div class="input-group">
                         <span>位X:</span>
-                        <input type="number" id="tf-x-${item.sceneItemId}" value="${posX}" ${isAudioOnly ? 'disabled' : ''} onchange="applyTransform(${item.sceneItemId}, 'x')">
+                        <input type="number" id="tf-x-${item.sceneItemId}" value="${posX}" onchange="applyTransform(${item.sceneItemId}, 'x')">
                     </div>
                     <div class="input-group">
                         <span>位Y:</span>
-                        <input type="number" id="tf-y-${item.sceneItemId}" value="${posY}" ${isAudioOnly ? 'disabled' : ''} onchange="applyTransform(${item.sceneItemId}, 'y')">
+                        <input type="number" id="tf-y-${item.sceneItemId}" value="${posY}" onchange="applyTransform(${item.sceneItemId}, 'y')">
                     </div>
                 </div>
             `;
@@ -464,14 +463,9 @@
         });
     }
 
-    /* (1) 刪除來源 function（附帶二次確認彈窗） */
     function deleteSource(itemId, sourceName) {
-        const confirmDelete = confirm(`確定要從 OBS 畫面中刪除「${sourceName}」嗎？\n(此動作無法復原)`);
-        if (confirmDelete) {
-            sendRequest("RemoveSceneItem", {
-                sceneName: currentSceneName,
-                sceneItemId: itemId
-            }, "RemoveSceneItem");
+        if (confirm(`確定要從 OBS 畫面中刪除「${sourceName}」嗎？`)) {
+            sendRequest("RemoveSceneItem", { sceneName: currentSceneName, sceneItemId: itemId }, "RemoveSceneItem");
         }
     }
 
