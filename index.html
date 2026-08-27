@@ -11,6 +11,7 @@
             --accent-color: #00bcd4;
             --danger-color: #ff5252;
             --success-color: #4caf50;
+            --disabled-color: #0d0d10;
             --text-main: #e0e0e0;
             --text-sub: #a0a0a0;
         }
@@ -36,7 +37,7 @@
             padding: 8px 16px; border-radius: 6px; font-weight: bold; cursor: pointer;
         }
 
-        /* 頂部狀態列 (4欄) */
+        /* 頂部狀態列 */
         .status-header {
             background: var(--card-bg); padding: 12px; border-radius: 8px; margin-bottom: 12px;
             display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; text-align: center;
@@ -55,7 +56,7 @@
         .btn-record { background: #1976d2; }
         .btn-record.active { background: var(--danger-color); }
 
-        /* 頁籤排版 (Tab Nav) */
+        /* 頁籤排版 */
         .tab-nav { display: flex; border-bottom: 2px solid #333; margin-bottom: 12px; }
         .tab-btn {
             flex: 1; padding: 10px 0; text-align: center; background: none; border: none;
@@ -64,11 +65,10 @@
         }
         .tab-btn.active { color: var(--accent-color); border-bottom-color: var(--accent-color); }
 
-        /* 內容分頁 */
         .tab-content { display: none; }
         .tab-content.active { display: block; }
 
-        /* 列表樣式 */
+        /* 列表與卡片 */
         ul { list-style: none; padding: 0; margin: 0; }
         .card-item {
             background: var(--card-bg); border-radius: 8px; padding: 12px; margin-bottom: 10px;
@@ -76,17 +76,34 @@
         }
         .card-row { display: flex; justify-content: space-between; align-items: center; }
 
-        .source-info { display: flex; flex-direction: column; gap: 2px; }
-        .source-size { font-size: 0.78em; color: var(--accent-color); }
+        /* 上傳圖片卡片特別樣式 */
+        .upload-card { border: 1px dashed var(--accent-color); background: #181820; }
+        .upload-card input[type=text] {
+            width: 100%; background: #2b2b36; border: 1px solid #444; color: #fff;
+            padding: 8px; border-radius: 4px; outline: none;
+        }
 
-        /* 場景項目 */
+        /* 尺寸與位置調整面板 */
+        .transform-box {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+            background: #252530; padding: 8px; border-radius: 6px;
+        }
+        .transform-box.disabled {
+            background: var(--disabled-color); opacity: 0.35; pointer-events: none;
+        }
+        .input-group { display: flex; align-items: center; gap: 4px; font-size: 0.8em; color: var(--text-sub); }
+        .input-group input {
+            width: 100%; background: #1a1a22; border: 1px solid #444; color: #fff;
+            padding: 4px 6px; border-radius: 4px; text-align: center; font-size: 0.9em;
+        }
+
+        /* 場景與按鈕 */
         .scene-item {
             padding: 14px; background: var(--card-bg); border-radius: 8px; margin-bottom: 8px;
             font-size: 1em; cursor: pointer; border-left: 4px solid transparent;
         }
         .scene-item.active { border-left-color: var(--accent-color); background: #252535; font-weight: bold; }
 
-        /* 元件控制按鈕 */
         .icon-btn {
             background: #2b2b36; border: 1px solid #444; color: #fff; padding: 8px 14px;
             border-radius: 4px; font-size: 0.85em; cursor: pointer; min-width: 75px; text-align: center;
@@ -94,7 +111,6 @@
         .icon-btn.muted { background: var(--danger-color); border-color: var(--danger-color); }
         .icon-btn.visible { background: var(--success-color); border-color: var(--success-color); }
 
-        /* 音軌音量滑桿與選單 */
         .slider-container { display: flex; align-items: center; gap: 8px; width: 100%; }
         .slider-container span { font-size: 0.8em; color: var(--text-sub); width: 35px; }
         .slider-container input[type=range] { flex: 1; height: 24px; }
@@ -126,7 +142,7 @@
 <!-- 頁籤導覽 -->
 <div class="tab-nav">
     <button class="tab-btn active" onclick="switchTab('tab-scenes', this)">場景</button>
-    <button class="tab-btn" onclick="switchTab('tab-sources', this)">來源(可見)</button>
+    <button class="tab-btn" onclick="switchTab('tab-sources', this)">來源與排版</button>
     <button class="tab-btn" onclick="switchTab('tab-audio', this)">音軌控制</button>
 </div>
 
@@ -135,8 +151,16 @@
     <ul id="scenes-list"></ul>
 </div>
 
-<!-- 分頁 2: 來源列表 -->
+<!-- 分頁 2: 來源與排版（含手機圖片上傳） -->
 <div id="tab-sources" class="tab-content">
+    <!-- 功能 (1) 手機直接上傳圖片至 OBS -->
+    <div class="card-item upload-card">
+        <strong>新增手機圖片來源</strong>
+        <input type="text" id="new-source-name" placeholder="輸入來源名稱 (留空預設為: 手機圖片)">
+        <input type="file" id="img-uploader" accept="image/*" style="display:none;" onchange="uploadImageToOBS(this)">
+        <button class="btn-action btn-record" style="width:100%; font-size:0.9em; padding:10px;" onclick="document.getElementById('img-uploader').click()">選取照片並上傳至 OBS</button>
+    </div>
+
     <ul id="sources-list"></ul>
 </div>
 
@@ -159,16 +183,13 @@
         ws = new WebSocket(`ws://${ip}:4455`);
 
         ws.onopen = () => console.log("WebSocket 已連接");
-
         ws.onmessage = (event) => handleMessage(JSON.parse(event.data));
-
         ws.onclose = () => {
             document.getElementById("conn-status").innerText = "未連線";
             document.getElementById("conn-status").style.color = "var(--danger-color)";
             document.getElementById("video-res").innerText = "--";
             clearInterval(refreshTimer);
         };
-
         ws.onerror = () => alert("連接失敗，請確認 IP 或 OBS WebSocket 4455 設定。");
     }
 
@@ -203,13 +224,15 @@
 
         if (msg.op === 5) {
             const { eventType, eventData } = msg.d;
-            
             if (eventType === "CurrentProgramSceneChanged") {
                 currentSceneName = eventData.sceneName;
                 sendRequest("GetSceneList");
             }
             if (eventType === "SceneItemEnableStateChanged") {
                 updateSourceVisibilityUI(eventData.sceneItemId, eventData.sceneItemEnabled);
+            }
+            if (eventType === "SceneItemTransformChanged") {
+                updateTransformUI(eventData.sceneItemId, eventData.sceneItemTransform);
             }
             if (eventType === "InputMuteStateChanged") {
                 updateMuteUI(eventData.inputName, eventData.inputMuted);
@@ -228,10 +251,8 @@
             const reqId = msg.d.requestId;
 
             if (reqType === "GetVideoSettings") {
-                const width = resData.outputWidth;
-                const height = resData.outputHeight;
                 const fps = Math.round(resData.fpsNumerator / resData.fpsDenominator);
-                document.getElementById("video-res").innerText = `${width}x${height} p${fps}`;
+                document.getElementById("video-res").innerText = `${resData.outputWidth}x${resData.outputHeight} p${fps}`;
             }
 
             if (reqType === "GetStreamStatus") {
@@ -259,12 +280,12 @@
                 sendRequest("GetSceneItemList", { sceneName: currentSceneName });
             }
 
-            if (reqType === "GetSceneItemList") {
-                renderSourceList(resData.sceneItems);
-            }
+            if (reqType === "GetSceneItemList") renderSourceList(resData.sceneItems);
+            if (reqType === "GetInputList") buildAudioListDOM(resData.inputs);
 
-            if (reqType === "GetInputList") {
-                buildAudioListDOM(resData.inputs);
+            if (reqId === "CreateImageSource") {
+                alert("圖片成功新增至 OBS 畫面！");
+                sendRequest("GetSceneItemList", { sceneName: currentSceneName });
             }
 
             if (reqId.startsWith("InitVol_")) updateVolumeUI(reqId.replace("InitVol_", ""), resData.inputVolumeMul);
@@ -272,6 +293,30 @@
             if (reqId.startsWith("InitBal_")) updateBalanceUI(reqId.replace("InitBal_", ""), resData.inputAudioBalance);
             if (reqId.startsWith("InitMon_")) updateMonitorUI(reqId.replace("InitMon_", ""), resData.monitorType);
         }
+    }
+
+    /* --- 功能 (1) 手機上傳圖片至 OBS --- */
+    function uploadImageToOBS(fileInput) {
+        const file = fileInput.files[0];
+        if (!file) return;
+
+        let sourceName = document.getElementById("new-source-name").value.trim();
+        if (!sourceName) {
+            sourceName = "手機圖片_" + Math.floor(Math.random() * 1000);
+        }
+
+        const reader = new FileReader();
+        reader.onload = function (e) {
+            sendRequest("CreateInput", {
+                sceneName: currentSceneName,
+                inputName: sourceName,
+                inputKind: "image_source",
+                inputSettings: { file: e.target.result },
+                sceneItemEnabled: true
+            }, "CreateImageSource");
+        };
+        reader.readAsDataURL(file);
+        fileInput.value = "";
     }
 
     /* --- 1. 場景列表 --- */
@@ -282,44 +327,95 @@
             const li = document.createElement("li");
             li.className = `scene-item ${s.sceneName === activeScene ? 'active' : ''}`;
             li.innerText = s.sceneName;
-            li.onclick = () => {
-                sendRequest("SetCurrentProgramScene", { sceneName: s.sceneName });
-            };
+            li.onclick = () => sendRequest("SetCurrentProgramScene", { sceneName: s.sceneName });
             el.appendChild(li);
         });
     }
 
-    /* --- 2. 來源 可見/隱藏 (加入尺寸像素標籤) --- */
+    /* --- 2. 來源列表與功能 (2) 尺寸/位置調整（無效來源自動返黑） --- */
     function renderSourceList(sources) {
         const el = document.getElementById("sources-list");
         el.innerHTML = "";
+
         sources.forEach(item => {
             const li = document.createElement("li");
             li.className = "card-item";
 
-            // 計算或讀取來源項目的尺寸像素 PX
-            let sizeText = "尺寸: 調整中/未指定";
-            if (item.sourceWidth && item.sourceHeight) {
-                sizeText = `${Math.round(item.sourceWidth)} x ${Math.round(item.sourceHeight)} px`;
-            } else if (item.sourceItemTransform && item.sourceItemTransform.sourceWidth) {
-                sizeText = `${Math.round(item.sourceItemTransform.sourceWidth)} x ${Math.round(item.sourceItemTransform.sourceHeight)} px`;
-            }
+            const kind = (item.inputKind || "").toLowerCase();
+            // 判斷是否為「純音源輸入」或其他不具備畫面的來源
+            const isAudioOnly = kind.includes("audio") || kind.includes("wasapi") || kind.includes("mic");
+
+            const tf = item.sceneItemTransform || {};
+            const width = Math.round(tf.boundsWidth || tf.sourceWidth || 0);
+            const height = Math.round(tf.boundsHeight || tf.sourceHeight || 0);
+            const posX = Math.round(tf.positionX || 0);
+            const posY = Math.round(tf.positionY || 0);
 
             li.innerHTML = `
                 <div class="card-row">
-                    <div class="source-info">
-                        <strong>${item.sourceName}</strong>
-                        <span class="source-size">${sizeText}</span>
-                    </div>
+                    <strong>${item.sourceName}</strong>
                     <button id="src-btn-${item.sceneItemId}" 
                             class="icon-btn ${item.sceneItemEnabled ? 'visible' : ''}" 
                             onclick="toggleSourceVisible(${item.sceneItemId}, ${!item.sceneItemEnabled})">
                         ${item.sceneItemEnabled ? '顯示中' : '已隱藏'}
                     </button>
                 </div>
+
+                <!-- 位置與尺寸調整面板 (若無畫面則套用 disabled 返黑) -->
+                <div class="transform-box ${isAudioOnly ? 'disabled' : ''}">
+                    <div class="input-group">
+                        <span>寬W:</span>
+                        <input type="number" id="tf-w-${item.sceneItemId}" value="${width}" ${isAudioOnly ? 'disabled' : ''} onchange="applyTransform(${item.sceneItemId})">
+                    </div>
+                    <div class="input-group">
+                        <span>高H:</span>
+                        <input type="number" id="tf-h-${item.sceneItemId}" value="${height}" ${isAudioOnly ? 'disabled' : ''} onchange="applyTransform(${item.sceneItemId})">
+                    </div>
+                    <div class="input-group">
+                        <span>位X:</span>
+                        <input type="number" id="tf-x-${item.sceneItemId}" value="${posX}" ${isAudioOnly ? 'disabled' : ''} onchange="applyTransform(${item.sceneItemId})">
+                    </div>
+                    <div class="input-group">
+                        <span>位Y:</span>
+                        <input type="number" id="tf-y-${item.sceneItemId}" value="${posY}" ${isAudioOnly ? 'disabled' : ''} onchange="applyTransform(${item.sceneItemId})">
+                    </div>
+                </div>
             `;
             el.appendChild(li);
         });
+    }
+
+    // 發送尺寸與位置變更設定至 OBS
+    function applyTransform(itemId) {
+        const w = parseFloat(document.getElementById(`tf-w-${itemId}`).value);
+        const h = parseFloat(document.getElementById(`tf-h-${itemId}`).value);
+        const x = parseFloat(document.getElementById(`tf-x-${itemId}`).value);
+        const y = parseFloat(document.getElementById(`tf-y-${itemId}`).value);
+
+        sendRequest("SetSceneItemTransform", {
+            sceneName: currentSceneName,
+            sceneItemId: itemId,
+            sceneItemTransform: {
+                positionX: x,
+                positionY: y,
+                boundsType: "OBS_BOUNDS_SCALE_INNER",
+                boundsWidth: w,
+                boundsHeight: h
+            }
+        });
+    }
+
+    function updateTransformUI(itemId, tf) {
+        if (!tf) return;
+        const elW = document.getElementById(`tf-w-${itemId}`);
+        const elH = document.getElementById(`tf-h-${itemId}`);
+        const elX = document.getElementById(`tf-x-${itemId}`);
+        const elY = document.getElementById(`tf-y-${itemId}`);
+
+        if (elW) elW.value = Math.round(tf.boundsWidth || tf.sourceWidth || 0);
+        if (elH) elH.value = Math.round(tf.boundsHeight || tf.sourceHeight || 0);
+        if (elX) elX.value = Math.round(tf.positionX || 0);
+        if (elY) elY.value = Math.round(tf.positionY || 0);
     }
 
     function toggleSourceVisible(itemId, enable) {
@@ -418,16 +514,9 @@
     function toggleStream() { sendRequest(isStreaming ? "StopStream" : "StartStream"); }
     function toggleRecord() { sendRequest(isRecording ? "StopRecord" : "StartRecord"); }
     function toggleMute(name) { sendRequest("ToggleInputMute", { inputName: name }); }
-    
-    function setVolume(name, val) { 
-        sendRequest("SetInputVolume", { inputName: name, inputVolumeMul: parseFloat(val) }); 
-    }
-    function setPan(name, val) { 
-        sendRequest("SetInputAudioBalance", { inputName: name, inputAudioBalance: parseFloat(val) }); 
-    }
-    function setMonitor(name, val) { 
-        sendRequest("SetInputAudioMonitorType", { inputName: name, monitorType: val }); 
-    }
+    function setVolume(name, val) { sendRequest("SetInputVolume", { inputName: name, inputVolumeMul: parseFloat(val) }); }
+    function setPan(name, val) { sendRequest("SetInputAudioBalance", { inputName: name, inputAudioBalance: parseFloat(val) }); }
+    function setMonitor(name, val) { sendRequest("SetInputAudioMonitorType", { inputName: name, monitorType: val }); }
 
     function switchTab(tabId, btn) {
         document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
