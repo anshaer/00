@@ -123,11 +123,13 @@
 </head>
 <body>
 
+<!-- 設定 IP 區塊 -->
 <div class="conn-box">
     <input type="text" id="server-ip" value="192.168.1.200" placeholder="輸入電腦 IP">
     <button onclick="connectOBS()">連接 :4455</button>
 </div>
 
+<!-- 頂部狀態 -->
 <div class="status-header">
     <div class="stat-item"><div class="label">連線狀態</div><div id="conn-status" class="val" style="color:var(--danger-color)">未連線</div></div>
     <div class="stat-item"><div class="label">輸出畫質</div><div id="video-res" class="val">--</div></div>
@@ -135,32 +137,37 @@
     <div class="stat-item"><div class="label">掉幀</div><div id="dropped-frames" class="val">0%</div></div>
 </div>
 
+<!-- 串流/錄影 開關 -->
 <div class="action-btns">
     <button id="btn-toggle-stream" class="btn-action btn-stream" onclick="toggleStream()">開始串流</button>
     <button id="btn-toggle-record" class="btn-action btn-record" onclick="toggleRecord()">開始錄影</button>
 </div>
 
+<!-- 頁籤導覽 -->
 <div class="tab-nav">
     <button class="tab-btn active" onclick="switchTab('tab-scenes', this)">場景</button>
     <button class="tab-btn" onclick="switchTab('tab-sources', this)">來源與排版</button>
     <button class="tab-btn" onclick="switchTab('tab-audio', this)">音軌控制</button>
 </div>
 
+<!-- 分頁 1: 場景列表 -->
 <div id="tab-scenes" class="tab-content active">
     <ul id="scenes-list"></ul>
 </div>
 
+<!-- 分頁 2: 來源與排版 -->
 <div id="tab-sources" class="tab-content">
     <div class="card-item upload-card">
         <strong>新增手機圖片來源</strong>
         <input type="text" id="new-source-name" placeholder="輸入來源名稱 (留空預設為: 手機圖片)">
         <input type="file" id="img-uploader" accept="image/*" style="display:none;" onchange="uploadImageToOBS(this)">
-        <button class="btn-action btn-record" style="width:100%; font-size:0.9em; padding:10px;" onclick="document.getElementById('img-uploader').click()">選取照片並上傳至 OBS</button>
+        <button class="btn-action btn-record" id="upload-btn" style="width:100%; font-size:0.9em; padding:10px;" onclick="document.getElementById('img-uploader').click()">選取照片並上傳至 OBS</button>
     </div>
 
     <ul id="sources-list"></ul>
 </div>
 
+<!-- 分頁 3: 音軌控制 -->
 <div id="tab-audio" class="tab-content">
     <ul id="audio-list"></ul>
 </div>
@@ -173,7 +180,6 @@
     let currentSceneName = "";
     let isInteracting = false; 
 
-    // 紀錄各來源原始比例 { itemId: ratio }
     let sourceRatios = {};
 
     function connectOBS() {
@@ -283,6 +289,8 @@
             if (reqType === "GetInputList") buildAudioListDOM(resData.inputs);
 
             if (reqId === "CreateImageSource") {
+                document.getElementById("upload-btn").innerText = "選取照片並上傳至 OBS";
+                document.getElementById("upload-btn").disabled = false;
                 alert("圖片成功新增至 OBS 畫面！");
                 sendRequest("GetSceneItemList", { sceneName: currentSceneName });
             }
@@ -294,7 +302,7 @@
         }
     }
 
-    /* --- (1) 修正新增圖片閃退：極致安全前端壓縮限制 --- */
+    /* --- 改用 OBS 瀏覽器元件 (browser_source) 顯示圖片：零閃退且極速 --- */
     function uploadImageToOBS(fileInput) {
         const file = fileInput.files[0];
         if (!file) return;
@@ -304,14 +312,16 @@
             sourceName = "手機圖片_" + Math.floor(Math.random() * 1000);
         }
 
-        const ip = document.getElementById("server-ip").value.trim();
-        const reader = new FileReader();
+        const btn = document.getElementById("upload-btn");
+        btn.innerText = "圖片處理解析中...";
+        btn.disabled = true;
 
+        const reader = new FileReader();
         reader.onload = function (e) {
             const img = new Image();
             img.onload = function () {
-                // 安全尺寸限制：寬高上限 1280px，防止超大解析度壓垮 OBS
-                const MAX_LIMIT = 1280;
+                // 限制解析度以提升傳輸流暢度 (800px 寬高即可，渲染極快)
+                const MAX_LIMIT = 800;
                 let width = img.width, height = img.height;
 
                 if (width > MAX_LIMIT || height > MAX_LIMIT) {
@@ -330,37 +340,25 @@
                 const ctx = canvas.getContext("2d");
                 ctx.drawImage(img, 0, 0, width, height);
 
-                // 轉為輕量 Base64 縮圖 (品質 0.7)
-                const safeBase64 = canvas.toDataURL("image/jpeg", 0.7);
+                // 產出極輕量 Base64 網頁圖像
+                const compressedBase64 = canvas.toDataURL("image/jpeg", 0.7);
 
-                // 首選：嘗試傳給電腦 8080 後端 (如果使用者有開 server.py)
-                fetch(`http://${ip}:8080/upload`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ filename: `${Date.now()}.jpg`, image: safeBase64 })
-                })
-                .then(res => res.json())
-                .then(data => {
-                    if (data.status === "success") {
-                        sendRequest("CreateInput", {
-                            sceneName: currentSceneName,
-                            inputName: sourceName,
-                            inputKind: "image_source",
-                            inputSettings: { file: data.file_path },
-                            sceneItemEnabled: true
-                        }, "CreateImageSource");
-                    }
-                })
-                .catch(() => {
-                    // 後端無回應時的 Safe 備案：發送縮小的 Base64 給 OBS
-                    sendRequest("CreateInput", {
-                        sceneName: currentSceneName,
-                        inputName: sourceName,
-                        inputKind: "image_source",
-                        inputSettings: { file: safeBase64 },
-                        sceneItemEnabled: true
-                    }, "CreateImageSource");
-                });
+                // 組合為標準 HTML 網頁語法
+                const htmlContent = `data:text/html;charset=utf-8,<html><head><style>body{margin:0;padding:0;overflow:hidden;background:transparent;display:flex;justify-content:center;align-items:center;height:100vh;}img{max-width:100%;max-height:100%;object-fit:contain;}</style></head><body><img src="${compressedBase64}"/></body></html>`;
+
+                // 透過 CreateInput 建立為 browser_source (完全不會引發 OBS C++ 原生崩潰)
+                sendRequest("CreateInput", {
+                    sceneName: currentSceneName,
+                    inputName: sourceName,
+                    inputKind: "browser_source",
+                    inputSettings: {
+                        url: htmlContent,
+                        width: width,
+                        height: height,
+                        css: ""
+                    },
+                    sceneItemEnabled: true
+                }, "CreateImageSource");
             };
             img.src = e.target.result;
         };
@@ -381,7 +379,7 @@
         });
     }
 
-    /* --- 2. 來源列表與 (2) 保持比例動態變更 --- */
+    /* --- 2. 來源列表與保持比例連動 --- */
     function renderSourceList(sources) {
         const el = document.getElementById("sources-list");
         el.innerHTML = "";
@@ -399,7 +397,6 @@
             const posX = Math.round(tf.positionX || 0);
             const posY = Math.round(tf.positionY || 0);
 
-            // 紀錄該來源的初始比例
             sourceRatios[item.sceneItemId] = height > 0 ? (width / height) : 1;
 
             li.innerHTML = `
@@ -440,7 +437,6 @@
         });
     }
 
-    /* (2) 保持等比例數值連動計算 */
     function applyTransform(itemId, changedType) {
         const elW = document.getElementById(`tf-w-${itemId}`);
         const elH = document.getElementById(`tf-h-${itemId}`);
@@ -455,7 +451,6 @@
 
         const ratio = sourceRatios[itemId] || 1;
 
-        // 如果勾選保持比例，自動算算另一邊數值
         if (isRatioLocked) {
             if (changedType === 'w') {
                 h = Math.round(w / ratio);
@@ -465,7 +460,6 @@
                 elW.value = w;
             }
         } else {
-            // 未鎖定時更新當前比例
             if (h > 0) sourceRatios[itemId] = w / h;
         }
 
