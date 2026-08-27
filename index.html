@@ -85,8 +85,8 @@
 
         /* 元件控制按鈕 */
         .icon-btn {
-            background: #2b2b36; border: 1px solid #444; color: #fff; padding: 6px 12px;
-            border-radius: 4px; font-size: 0.85em; cursor: pointer; min-width: 70px;
+            background: #2b2b36; border: 1px solid #444; color: #fff; padding: 8px 14px;
+            border-radius: 4px; font-size: 0.85em; cursor: pointer; min-width: 75px; text-align: center;
         }
         .icon-btn.muted { background: var(--danger-color); border-color: var(--danger-color); }
         .icon-btn.visible { background: var(--success-color); border-color: var(--success-color); }
@@ -94,7 +94,7 @@
         /* 音軌音量滑桿與選單 */
         .slider-container { display: flex; align-items: center; gap: 8px; width: 100%; }
         .slider-container span { font-size: 0.8em; color: var(--text-sub); width: 35px; }
-        .slider-container input[type=range] { flex: 1; height: 20px; }
+        .slider-container input[type=range] { flex: 1; height: 24px; }
         select { background: #2b2b36; border: 1px solid #444; color: #fff; padding: 6px 8px; border-radius: 4px; }
     </style>
 </head>
@@ -102,7 +102,7 @@
 
 <!-- 設定 IP 區塊 -->
 <div class="conn-box">
-    <input type="text" id="server-ip" value="127.0.0.1" placeholder="輸入電腦 IP (如: 192.168.1.50)">
+    <input type="text" id="server-ip" value="192.168.1.200" placeholder="輸入電腦 IP">
     <button onclick="connectOBS()">連接 :4455</button>
 </div>
 
@@ -147,10 +147,7 @@
     let isStreaming = false;
     let isRecording = false;
     let currentSceneName = "";
-    
-    // 記錄 UI 是否已被建立，防止重刷 DOM 導致閃爍
-    let isAudioListBuilt = false;
-    let isInteracting = false; // 使用者操作 slider 中不覆蓋數值
+    let isInteracting = false; 
 
     function connectOBS() {
         if (ws) ws.close();
@@ -165,10 +162,9 @@
             document.getElementById("conn-status").innerText = "未連線";
             document.getElementById("conn-status").style.color = "var(--danger-color)";
             clearInterval(refreshTimer);
-            isAudioListBuilt = false;
         };
 
-        ws.onerror = () => alert("連接失敗，請檢查 IP 或 OBS 4455 連接埠設定。");
+        ws.onerror = () => alert("連接失敗，請確認 IP 或 OBS WebSocket 4455 設定。");
     }
 
     function sendRequest(requestType, requestData = {}, requestId = null) {
@@ -183,8 +179,8 @@
     function handleMessage(msg) {
         // Opcode 0: Hello
         if (msg.op === 0) {
-            // 訂閱事件 (新增 InputVolumeChanged, InputMuteStateChanged 等)
-            ws.send(JSON.stringify({ op: 1, d: { rpcVersion: 1, eventSubscriptions: 33 | 64 } }));
+            // 訂閱事件：General (1) | Scenes (4) | Inputs (8) | Stream/Record (64) = 77
+            ws.send(JSON.stringify({ op: 1, d: { rpcVersion: 1, eventSubscriptions: 77 } }));
         }
 
         // Opcode 2: Identified
@@ -196,26 +192,23 @@
             sendRequest("GetSceneList");
             sendRequest("GetInputList");
             
-            // 1秒定期獲取狀態資訊 (只抓串流狀態，不刷 DOM)
+            // 低頻率輪詢：僅每 2 秒抓一次串流與錄影狀態（極低負擔）
             clearInterval(refreshTimer);
             refreshTimer = setInterval(() => {
                 sendRequest("GetStreamStatus");
                 sendRequest("GetRecordStatus");
-                if (!isInteracting) {
-                    refreshAudioValues(); // 只更新數據，不重造 DOM
-                }
-            }, 1000);
+            }, 2000);
         }
 
-        // Opcode 5: 事件推播即時反應
+        // Opcode 5: 事件驅動 (Event Driven - 完全不卡手機)
         if (msg.op === 5) {
             const { eventType, eventData } = msg.d;
+            
             if (eventType === "CurrentProgramSceneChanged") {
                 currentSceneName = eventData.sceneName;
                 sendRequest("GetSceneList");
             }
             if (eventType === "SceneItemEnableStateChanged") {
-                // 即時改變按鈕狀態
                 updateSourceVisibilityUI(eventData.sceneItemId, eventData.sceneItemEnabled);
             }
             if (eventType === "InputMuteStateChanged") {
@@ -257,6 +250,7 @@
             if (reqType === "GetSceneList") {
                 currentSceneName = resData.currentProgramSceneName;
                 renderSceneList(resData.scenes, currentSceneName);
+                // 獲取當前場景的來源
                 sendRequest("GetSceneItemList", { sceneName: currentSceneName });
             }
 
@@ -265,23 +259,18 @@
             }
 
             if (reqType === "GetInputList") {
-                // 只有第一次連線才建立音軌清單 DOM，防止滑動時閃爍
-                if (!isAudioListBuilt) {
-                    buildAudioListDOM(resData.inputs);
-                    isAudioListBuilt = true;
-                }
-                refreshAudioValues();
+                buildAudioListDOM(resData.inputs);
             }
 
-            // 更新個案音量/平衡數據
-            if (reqId.startsWith("AudioVol_")) updateVolumeUI(reqId.replace("AudioVol_", ""), resData.inputVolumeMul);
-            if (reqId.startsWith("AudioMute_")) updateMuteUI(reqId.replace("AudioMute_", ""), resData.inputMuted);
-            if (reqId.startsWith("AudioBal_")) updateBalanceUI(reqId.replace("AudioBal_", ""), resData.inputAudioBalance);
-            if (reqId.startsWith("AudioMon_")) updateMonitorUI(reqId.replace("AudioMon_", ""), resData.monitorType);
+            // 初始化音軌的各個數值
+            if (reqId.startsWith("InitVol_")) updateVolumeUI(reqId.replace("InitVol_", ""), resData.inputVolumeMul);
+            if (reqId.startsWith("InitMute_")) updateMuteUI(reqId.replace("InitMute_", ""), resData.inputMuted);
+            if (reqId.startsWith("InitBal_")) updateBalanceUI(reqId.replace("InitBal_", ""), resData.inputAudioBalance);
+            if (reqId.startsWith("InitMon_")) updateMonitorUI(reqId.replace("InitMon_", ""), resData.monitorType);
         }
     }
 
-    /* --- 1. 場景管理 --- */
+    /* --- 1. 場景列表與切換 --- */
     function renderSceneList(scenes, activeScene) {
         const el = document.getElementById("scenes-list");
         el.innerHTML = "";
@@ -289,12 +278,14 @@
             const li = document.createElement("li");
             li.className = `scene-item ${s.sceneName === activeScene ? 'active' : ''}`;
             li.innerText = s.sceneName;
-            li.onclick = () => sendRequest("SetCurrentProgramScene", { sceneName: s.sceneName });
+            li.onclick = () => {
+                sendRequest("SetCurrentProgramScene", { sceneName: s.sceneName });
+            };
             el.appendChild(li);
         });
     }
 
-    /* --- 2. 來源管理 (顯示/隱藏修正) --- */
+    /* --- 2. 來源 可見/隱藏 修正 --- */
     function renderSourceList(sources) {
         const el = document.getElementById("sources-list");
         el.innerHTML = "";
@@ -315,8 +306,9 @@
         });
     }
 
-    // 正確修復：同時帶入 sceneName 與 sceneItemId 進行狀態設定
     function toggleSourceVisible(itemId, enable) {
+        if (!currentSceneName) return;
+        // 正確帶入 currentSceneName 與 sceneItemId
         sendRequest("SetSceneItemEnabled", {
             sceneName: currentSceneName,
             sceneItemId: itemId,
@@ -333,8 +325,7 @@
         }
     }
 
-    /* --- 3. 音軌控制 (解決閃爍、滑動卡頓、平衡失效) --- */
-    // (A) 只建立一次 DOM
+    /* --- 3. 音軌控制 (純事件驅動，解決卡頓) --- */
     function buildAudioListDOM(inputs) {
         const el = document.getElementById("audio-list");
         el.innerHTML = "";
@@ -355,13 +346,15 @@
                 <div class="slider-container">
                     <span>音量</span>
                     <input type="range" id="vol-${name}" min="0" max="1" step="0.01" 
-                           oninput="isInteracting=true" 
+                           ontouchstart="isInteracting=true" ontouchend="isInteracting=false"
+                           onmousedown="isInteracting=true" onmouseup="isInteracting=false"
                            onchange="setVolume('${name}', this.value)">
                 </div>
                 <div class="slider-container">
                     <span>平衡</span>
                     <input type="range" id="pan-${name}" min="0" max="1" step="0.01" 
-                           oninput="isInteracting=true" 
+                           ontouchstart="isInteracting=true" ontouchend="isInteracting=false"
+                           onmousedown="isInteracting=true" onmouseup="isInteracting=false"
                            onchange="setPan('${name}', this.value)">
                 </div>
                 <div class="card-row">
@@ -374,28 +367,23 @@
                 </div>
             `;
             el.appendChild(li);
+
+            // 只在建立 DOM 時查詢一次初始值
+            sendRequest("GetInputVolume", { inputName: name }, `InitVol_${name}`);
+            sendRequest("GetInputMute", { inputName: name }, `InitMute_${name}`);
+            sendRequest("GetInputAudioBalance", { inputName: name }, `InitBal_${name}`);
+            sendRequest("GetInputAudioMonitorType", { inputName: name }, `InitMon_${name}`);
         });
     }
 
-    // (B) 更新音軌資料 (發送請求)
-    function refreshAudioValues() {
-        document.querySelectorAll("[id^='vol-']").forEach(input => {
-            const name = input.id.replace("vol-", "");
-            sendRequest("GetInputVolume", { inputName: name }, `AudioVol_${name}`);
-            sendRequest("GetInputMute", { inputName: name }, `AudioMute_${name}`);
-            sendRequest("GetInputAudioBalance", { inputName: name }, `AudioBal_${name}`);
-            sendRequest("GetInputAudioMonitorType", { inputName: name }, `AudioMon_${name}`);
-        });
-    }
-
-    // (C) 僅即時更新 UI 元件，不重組 DOM
+    // UI 更新函式
     function updateVolumeUI(name, val) {
         const el = document.getElementById(`vol-${name}`);
-        if (el && !isInteracting) el.value = val;
+        if (el) el.value = val;
     }
     function updateBalanceUI(name, val) {
         const el = document.getElementById(`pan-${name}`);
-        if (el && !isInteracting) el.value = val;
+        if (el) el.value = val;
     }
     function updateMuteUI(name, isMuted) {
         const btn = document.getElementById(`mute-btn-${name}`);
@@ -409,18 +397,15 @@
         if (select) select.value = monType;
     }
 
-    /* API 發送控制動作 */
+    /* API 控制 */
     function toggleStream() { sendRequest(isStreaming ? "StopStream" : "StartStream"); }
     function toggleRecord() { sendRequest(isRecording ? "StopRecord" : "StartRecord"); }
     function toggleMute(name) { sendRequest("ToggleInputMute", { inputName: name }); }
     
     function setVolume(name, val) { 
-        isInteracting = false; 
         sendRequest("SetInputVolume", { inputName: name, inputVolumeMul: parseFloat(val) }); 
     }
     function setPan(name, val) { 
-        isInteracting = false; 
-        // 修復平衡 API：OBS 規範範圍為 0.0 ~ 1.0
         sendRequest("SetInputAudioBalance", { inputName: name, inputAudioBalance: parseFloat(val) }); 
     }
     function setMonitor(name, val) { 
