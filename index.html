@@ -167,7 +167,7 @@
     <ul id="scenes-list"></ul>
 </div>
 
-<!-- 分頁 2: 畫面來源 (僅視覺元件) -->
+<!-- 分頁 2: 畫面來源 -->
 <div id="tab-sources" class="tab-content">
     <div class="card-item upload-card">
         <strong>新增手機圖片來源</strong>
@@ -179,7 +179,7 @@
     <ul id="sources-list"></ul>
 </div>
 
-<!-- 分頁 3: 音軌控制 (僅音訊元件) -->
+<!-- 分頁 3: 音軌控制 -->
 <div id="tab-audio" class="tab-content">
     <ul id="audio-list"></ul>
 </div>
@@ -193,6 +193,7 @@
     let isInteracting = false; 
 
     let sourceRatios = {};
+    let audioInputNames = new Set(); // 記錄所有音軌來源名稱，用於嚴格分離
 
     function connectOBS() {
         if (ws) ws.close();
@@ -223,7 +224,7 @@
         if (!ws || ws.readyState !== WebSocket.OPEN) return;
         sendRequest("GetVideoSettings");
         sendRequest("GetSceneList");
-        sendRequest("GetInputList");
+        sendRequest("GetInputList"); // 先抓音軌清單，建立 audioInputNames 名冊
         sendRequest("GetStreamStatus");
         sendRequest("GetRecordStatus");
     }
@@ -268,7 +269,6 @@
                 updateBalanceUI(eventData.inputName, eventData.inputAudioBalance);
             }
             if (eventType === "SceneItemCreated" || eventType === "SceneItemRemoved") {
-                sendRequest("GetSceneItemList", { sceneName: currentSceneName });
                 sendRequest("GetInputList");
             }
         }
@@ -308,8 +308,26 @@
                 sendRequest("GetSceneItemList", { sceneName: currentSceneName });
             }
 
-            if (reqType === "GetSceneItemList") renderSourceList(resData.sceneItems);
-            if (reqType === "GetInputList") buildAudioListDOM(resData.inputs);
+            if (reqType === "GetInputList") {
+                // 1. 整理所有的音軌名稱
+                audioInputNames.clear();
+                resData.inputs.forEach(i => {
+                    const kind = (i.inputKind || "").toLowerCase();
+                    if (kind.includes("audio") || kind.includes("wasapi") || kind.includes("mic") || kind.includes("sound")) {
+                        audioInputNames.add(i.inputName);
+                    }
+                });
+                
+                // 2. 建立音軌分頁 DOM
+                buildAudioListDOM(resData.inputs);
+
+                // 3. 取得音軌名冊後，再繪製畫面來源，確保不誤混
+                sendRequest("GetSceneItemList", { sceneName: currentSceneName });
+            }
+
+            if (reqType === "GetSceneItemList") {
+                renderSourceList(resData.sceneItems);
+            }
 
             if (reqId === "CreateImageSource") {
                 document.getElementById("upload-btn").innerText = "選取照片並上傳至 OBS";
@@ -319,7 +337,6 @@
             }
 
             if (reqId === "RemoveSceneItem") {
-                sendRequest("GetSceneItemList", { sceneName: currentSceneName });
                 sendRequest("GetInputList");
             }
 
@@ -396,24 +413,24 @@
         });
     }
 
-    /* 判斷是否為音訊類 InputKind 的輔助函式 */
-    function isAudioKind(kindStr) {
-        if (!kindStr) return false;
-        const k = kindStr.toLowerCase();
-        return k.includes("audio") || k.includes("wasapi") || k.includes("mic") || k.includes("sound");
-    }
-
-    /* --- 2. 畫面來源列表（嚴格排除音效來源） --- */
+    /* --- 2. 畫面來源列表 (嚴格比對：凡屬於 audioInputNames 的項目一律排查) --- */
     function renderSourceList(sources) {
         const el = document.getElementById("sources-list");
         el.innerHTML = "";
 
-        // 嚴格過濾：名稱或 kind 包含音訊關鍵字者直接剔除
+        // 雙重過濾：比對 AudioInput 清單與 inputKind 關鍵字
         const visualSources = sources.filter(item => {
+            const name = item.sourceName;
             const kind = (item.inputKind || "").toLowerCase();
-            const name = (item.sourceName || "").toLowerCase();
-            const isAudio = isAudioKind(kind) || name.includes("音效") || name.includes("麥克風") || name.includes("audio");
-            return !isAudio;
+
+            // 如果該來源名稱出現在音軌清單中，直接過濾
+            if (audioInputNames.has(name)) return false;
+
+            // 如果種類包含音訊關鍵字，也過濾
+            if (kind.includes("audio") || kind.includes("wasapi") || kind.includes("mic") || kind.includes("sound")) {
+                return false;
+            }
+            return true;
         });
 
         if (visualSources.length === 0) {
@@ -559,16 +576,15 @@
         }
     }
 
-    /* --- 3. 音軌控制（專門渲染聲音來源） --- */
+    /* --- 3. 音軌控制 (僅顯示在音訊清單中的項目) --- */
     function buildAudioListDOM(inputs) {
         const el = document.getElementById("audio-list");
         el.innerHTML = "";
 
-        // 僅保留音訊輸入 (如：麥克風、輸出音效)
         const audioInputs = inputs.filter(i => {
             const kind = (i.inputKind || "").toLowerCase();
-            const name = (i.inputName || "").toLowerCase();
-            return isAudioKind(kind) || name.includes("音效") || name.includes("麥克風") || name.includes("audio");
+            const name = i.inputName;
+            return audioInputNames.has(name) || kind.includes("audio") || kind.includes("wasapi") || kind.includes("mic");
         });
 
         if (audioInputs.length === 0) {
