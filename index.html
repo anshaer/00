@@ -1,146 +1,3 @@
-<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>OBS 手機控制台</title>
-    <style>
-        :root {
-            --bg-color: #121216;
-            --card-bg: #1e1e24;
-            --accent-color: #00bcd4;
-            --danger-color: #ff5252;
-            --success-color: #4caf50;
-            --text-main: #e0e0e0;
-            --text-sub: #a0a0a0;
-        }
-
-        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            background-color: var(--bg-color); color: var(--text-main);
-            margin: 0; padding: 12px; font-size: 14px;
-        }
-
-        /* 連線設定區 */
-        .conn-box {
-            background: var(--card-bg); padding: 10px; border-radius: 8px;
-            display: flex; gap: 8px; margin-bottom: 12px; align-items: center;
-        }
-        .conn-box input {
-            flex: 1; background: #2b2b36; border: 1px solid #444; color: #fff;
-            padding: 8px 12px; border-radius: 6px; font-size: 0.95em; outline: none;
-        }
-        .conn-box button {
-            background: var(--accent-color); border: none; color: #000;
-            padding: 8px 16px; border-radius: 6px; font-weight: bold; cursor: pointer;
-        }
-
-        /* 頂部狀態列 */
-        .status-header {
-            background: var(--card-bg); padding: 12px; border-radius: 8px; margin-bottom: 12px;
-            display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; text-align: center;
-        }
-        .stat-item .label { font-size: 0.75em; color: var(--text-sub); }
-        .stat-item .val { font-size: 1.1em; font-weight: bold; color: var(--accent-color); margin-top: 2px; }
-
-        /* 串流與錄影控制按鈕 */
-        .action-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
-        .btn-action {
-            padding: 12px; border: none; border-radius: 8px; font-weight: bold;
-            color: #fff; cursor: pointer; font-size: 1em; text-align: center;
-        }
-        .btn-stream { background: #388e3c; }
-        .btn-stream.active { background: var(--danger-color); }
-        .btn-record { background: #1976d2; }
-        .btn-record.active { background: var(--danger-color); }
-
-        /* 頁籤排版 (Tab Nav) */
-        .tab-nav { display: flex; border-bottom: 2px solid #333; margin-bottom: 12px; }
-        .tab-btn {
-            flex: 1; padding: 10px 0; text-align: center; background: none; border: none;
-            color: var(--text-sub); font-size: 0.95em; font-weight: bold; cursor: pointer;
-            border-bottom: 3px solid transparent; margin-bottom: -2px;
-        }
-        .tab-btn.active { color: var(--accent-color); border-bottom-color: var(--accent-color); }
-
-        /* 內容分頁 */
-        .tab-content { display: none; }
-        .tab-content.active { display: block; }
-
-        /* 列表樣式 */
-        ul { list-style: none; padding: 0; margin: 0; }
-        .card-item {
-            background: var(--card-bg); border-radius: 8px; padding: 12px; margin-bottom: 10px;
-            display: flex; flex-direction: column; gap: 10px;
-        }
-        .card-row { display: flex; justify-content: space-between; align-items: center; }
-
-        /* 場景項目 */
-        .scene-item {
-            padding: 14px; background: var(--card-bg); border-radius: 8px; margin-bottom: 8px;
-            font-size: 1em; cursor: pointer; border-left: 4px solid transparent;
-        }
-        .scene-item.active { border-left-color: var(--accent-color); background: #252535; font-weight: bold; }
-
-        /* 元件控制按鈕 */
-        .icon-btn {
-            background: #2b2b36; border: 1px solid #444; color: #fff; padding: 8px 14px;
-            border-radius: 4px; font-size: 0.85em; cursor: pointer; min-width: 75px; text-align: center;
-        }
-        .icon-btn.muted { background: var(--danger-color); border-color: var(--danger-color); }
-        .icon-btn.visible { background: var(--success-color); border-color: var(--success-color); }
-
-        /* 音軌音量滑桿與選單 */
-        .slider-container { display: flex; align-items: center; gap: 8px; width: 100%; }
-        .slider-container span { font-size: 0.8em; color: var(--text-sub); width: 35px; }
-        .slider-container input[type=range] { flex: 1; height: 24px; }
-        select { background: #2b2b36; border: 1px solid #444; color: #fff; padding: 6px 8px; border-radius: 4px; }
-    </style>
-</head>
-<body>
-
-<!-- 設定 IP 區塊 -->
-<div class="conn-box">
-    <input type="text" id="server-ip" value="192.168.1.200" placeholder="輸入電腦 IP">
-    <button onclick="connectOBS()">連接 :4455</button>
-</div>
-
-<!-- 頂部狀態 -->
-<div class="status-header">
-    <div class="stat-item"><div class="label">連線狀態</div><div id="conn-status" class="val" style="color:var(--danger-color)">未連線</div></div>
-    <div class="stat-item"><div class="label">位元率</div><div id="bitrate" class="val">0 kbps</div></div>
-    <div class="stat-item"><div class="label">掉幀</div><div id="dropped-frames" class="val">0%</div></div>
-</div>
-
-<!-- 串流/錄影 開關 -->
-<div class="action-btns">
-    <button id="btn-toggle-stream" class="btn-action btn-stream" onclick="toggleStream()">開始串流</button>
-    <button id="btn-toggle-record" class="btn-action btn-record" onclick="toggleRecord()">開始錄影</button>
-</div>
-
-<!-- 頁籤導覽 -->
-<div class="tab-nav">
-    <button class="tab-btn active" onclick="switchTab('tab-scenes', this)">場景</button>
-    <button class="tab-btn" onclick="switchTab('tab-sources', this)">來源(可見)</button>
-    <button class="tab-btn" onclick="switchTab('tab-audio', this)">音軌控制</button>
-</div>
-
-<!-- 分頁 1: 場景列表 -->
-<div id="tab-scenes" class="tab-content active">
-    <ul id="scenes-list"></ul>
-</div>
-
-<!-- 分頁 2: 來源列表 -->
-<div id="tab-sources" class="tab-content">
-    <ul id="sources-list"></ul>
-</div>
-
-<!-- 分頁 3: 音軌控制 -->
-<div id="tab-audio" class="tab-content">
-    <ul id="audio-list"></ul>
-</div>
-
 <script>
     let ws = null;
     let refreshTimer = null;
@@ -177,22 +34,18 @@
     }
 
     function handleMessage(msg) {
-        // Opcode 0: Hello
         if (msg.op === 0) {
-            // 訂閱事件：General (1) | Scenes (4) | Inputs (8) | Stream/Record (64) = 77
-            ws.send(JSON.stringify({ op: 1, d: { rpcVersion: 1, eventSubscriptions: 77 } }));
+            // 訂閱全量事件
+            ws.send(JSON.stringify({ op: 1, d: { rpcVersion: 1, eventSubscriptions: 255 } }));
         }
 
-        // Opcode 2: Identified
         if (msg.op === 2) {
             document.getElementById("conn-status").innerText = "已連線";
             document.getElementById("conn-status").style.color = "var(--success-color)";
             
-            // 初始化數據
             sendRequest("GetSceneList");
             sendRequest("GetInputList");
             
-            // 低頻率輪詢：僅每 2 秒抓一次串流與錄影狀態（極低負擔）
             clearInterval(refreshTimer);
             refreshTimer = setInterval(() => {
                 sendRequest("GetStreamStatus");
@@ -200,7 +53,6 @@
             }, 2000);
         }
 
-        // Opcode 5: 事件驅動 (Event Driven - 完全不卡手機)
         if (msg.op === 5) {
             const { eventType, eventData } = msg.d;
             
@@ -222,7 +74,6 @@
             }
         }
 
-        // Opcode 7: Response
         if (msg.op === 7 && msg.d.requestStatus.result) {
             const reqType = msg.d.requestType;
             const resData = msg.d.responseData;
@@ -250,7 +101,6 @@
             if (reqType === "GetSceneList") {
                 currentSceneName = resData.currentProgramSceneName;
                 renderSceneList(resData.scenes, currentSceneName);
-                // 獲取當前場景的來源
                 sendRequest("GetSceneItemList", { sceneName: currentSceneName });
             }
 
@@ -262,7 +112,6 @@
                 buildAudioListDOM(resData.inputs);
             }
 
-            // 初始化音軌的各個數值
             if (reqId.startsWith("InitVol_")) updateVolumeUI(reqId.replace("InitVol_", ""), resData.inputVolumeMul);
             if (reqId.startsWith("InitMute_")) updateMuteUI(reqId.replace("InitMute_", ""), resData.inputMuted);
             if (reqId.startsWith("InitBal_")) updateBalanceUI(reqId.replace("InitBal_", ""), resData.inputAudioBalance);
@@ -270,7 +119,7 @@
         }
     }
 
-    /* --- 1. 場景列表與切換 --- */
+    /* --- 1. 場景列表 --- */
     function renderSceneList(scenes, activeScene) {
         const el = document.getElementById("scenes-list");
         el.innerHTML = "";
@@ -285,7 +134,7 @@
         });
     }
 
-    /* --- 2. 來源 可見/隱藏 修正 --- */
+    /* --- 2. 來源 可見/隱藏 關鍵修正 --- */
     function renderSourceList(sources) {
         const el = document.getElementById("sources-list");
         el.innerHTML = "";
@@ -308,12 +157,21 @@
 
     function toggleSourceVisible(itemId, enable) {
         if (!currentSceneName) return;
-        // 正確帶入 currentSceneName 與 sceneItemId
+        
+        // 1. 立即在網頁端強制更新 UI（解決反應延遲與卡住無法點擊的問題）
+        updateSourceVisibilityUI(itemId, enable);
+
+        // 2. 向 OBS 發送開關請求
         sendRequest("SetSceneItemEnabled", {
             sceneName: currentSceneName,
             sceneItemId: itemId,
             sceneItemEnabled: enable
         });
+
+        // 3. 0.2 秒後主動向 OBS 重新請求來源狀態，確保兩端同步
+        setTimeout(() => {
+            sendRequest("GetSceneItemList", { sceneName: currentSceneName });
+        }, 200);
     }
 
     function updateSourceVisibilityUI(itemId, enabled) {
@@ -321,11 +179,12 @@
         if (btn) {
             btn.innerText = enabled ? '顯示中' : '已隱藏';
             btn.className = `icon-btn ${enabled ? 'visible' : ''}`;
-            btn.setAttribute('onclick', `toggleSourceVisible(${itemId}, ${!enabled})`);
+            // 動態更新 onclick 的目標值 (!enabled)，讓下次點擊能正確切換
+            btn.onclick = () => toggleSourceVisible(itemId, !enabled);
         }
     }
 
-    /* --- 3. 音軌控制 (純事件驅動，解決卡頓) --- */
+    /* --- 3. 音軌控制 --- */
     function buildAudioListDOM(inputs) {
         const el = document.getElementById("audio-list");
         el.innerHTML = "";
@@ -368,7 +227,6 @@
             `;
             el.appendChild(li);
 
-            // 只在建立 DOM 時查詢一次初始值
             sendRequest("GetInputVolume", { inputName: name }, `InitVol_${name}`);
             sendRequest("GetInputMute", { inputName: name }, `InitMute_${name}`);
             sendRequest("GetInputAudioBalance", { inputName: name }, `InitBal_${name}`);
@@ -376,7 +234,6 @@
         });
     }
 
-    // UI 更新函式
     function updateVolumeUI(name, val) {
         const el = document.getElementById(`vol-${name}`);
         if (el) el.value = val;
@@ -419,5 +276,3 @@
         btn.classList.add('active');
     }
 </script>
-</body>
-</html>
