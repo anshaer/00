@@ -167,7 +167,7 @@
     <ul id="scenes-list"></ul>
 </div>
 
-<!-- 分頁 2: 畫面來源 -->
+<!-- 分頁 2: 畫面來源 (僅視覺元件) -->
 <div id="tab-sources" class="tab-content">
     <div class="card-item upload-card">
         <strong>新增手機圖片來源</strong>
@@ -179,7 +179,7 @@
     <ul id="sources-list"></ul>
 </div>
 
-<!-- 分頁 3: 音軌控制 -->
+<!-- 分頁 3: 音軌控制 (僅音訊元件) -->
 <div id="tab-audio" class="tab-content">
     <ul id="audio-list"></ul>
 </div>
@@ -269,6 +269,7 @@
             }
             if (eventType === "SceneItemCreated" || eventType === "SceneItemRemoved") {
                 sendRequest("GetSceneItemList", { sceneName: currentSceneName });
+                sendRequest("GetInputList");
             }
         }
 
@@ -319,6 +320,7 @@
 
             if (reqId === "RemoveSceneItem") {
                 sendRequest("GetSceneItemList", { sceneName: currentSceneName });
+                sendRequest("GetInputList");
             }
 
             if (reqId.startsWith("InitVol_")) updateVolumeUI(reqId.replace("InitVol_", ""), resData.inputVolumeMul);
@@ -394,15 +396,24 @@
         });
     }
 
-    /* --- 2. 畫面來源列表 (過濾音效輸入) --- */
+    /* 判斷是否為音訊類 InputKind 的輔助函式 */
+    function isAudioKind(kindStr) {
+        if (!kindStr) return false;
+        const k = kindStr.toLowerCase();
+        return k.includes("audio") || k.includes("wasapi") || k.includes("mic") || k.includes("sound");
+    }
+
+    /* --- 2. 畫面來源列表（嚴格排除音效來源） --- */
     function renderSourceList(sources) {
         const el = document.getElementById("sources-list");
         el.innerHTML = "";
 
-        // 精準過濾音訊元件，只保留視覺畫面來源
+        // 嚴格過濾：名稱或 kind 包含音訊關鍵字者直接剔除
         const visualSources = sources.filter(item => {
             const kind = (item.inputKind || "").toLowerCase();
-            return !(kind.includes("audio") || kind.includes("wasapi") || kind.includes("mic"));
+            const name = (item.sourceName || "").toLowerCase();
+            const isAudio = isAudioKind(kind) || name.includes("音效") || name.includes("麥克風") || name.includes("audio");
+            return !isAudio;
         });
 
         if (visualSources.length === 0) {
@@ -548,14 +559,22 @@
         }
     }
 
-    /* --- 3. 音軌控制 --- */
+    /* --- 3. 音軌控制（專門渲染聲音來源） --- */
     function buildAudioListDOM(inputs) {
         const el = document.getElementById("audio-list");
         el.innerHTML = "";
 
-        const audioInputs = inputs.filter(i => i.inputKind && (
-            i.inputKind.includes("audio") || i.inputKind.includes("wasapi") || i.inputKind.includes("mic")
-        ));
+        // 僅保留音訊輸入 (如：麥克風、輸出音效)
+        const audioInputs = inputs.filter(i => {
+            const kind = (i.inputKind || "").toLowerCase();
+            const name = (i.inputName || "").toLowerCase();
+            return isAudioKind(kind) || name.includes("音效") || name.includes("麥克風") || name.includes("audio");
+        });
+
+        if (audioInputs.length === 0) {
+            el.innerHTML = `<li class="card-item" style="text-align:center; color:var(--text-sub);">無可控制的音訊輸入</li>`;
+            return;
+        }
 
         audioInputs.forEach(i => {
             const name = i.inputName;
