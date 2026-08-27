@@ -51,12 +51,29 @@
             padding: 8px 12px; border-radius: 6px; font-size: 0.9em; outline: none;
         }
 
+        .btn-group-conn { display: grid; grid-template-columns: 2fr 1fr; gap: 8px; margin-top: 4px; }
         .btn-connect {
             background: var(--accent-color); border: none; color: #000;
             padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer;
-            text-align: center; font-size: 0.95em; margin-top: 4px;
+            text-align: center; font-size: 0.95em;
         }
-        .btn-connect:active { opacity: 0.8; }
+        .btn-scan {
+            background: #2b2b36; border: 1px solid var(--accent-color); color: var(--accent-color);
+            padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer;
+            text-align: center; font-size: 0.9em;
+        }
+
+        /* 掃描對話視窗 */
+        #qr-modal {
+            display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(0,0,0,0.85); z-index: 9999; flex-direction: column;
+            justify-content: center; align-items: center; padding: 20px;
+        }
+        #reader { width: 100%; max-width: 320px; background: #000; border-radius: 8px; overflow: hidden; }
+        .btn-close-scan {
+            margin-top: 15px; background: var(--danger-color); border: none; color: #fff;
+            padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer;
+        }
 
         /* 頂部狀態列 */
         .status-header {
@@ -154,14 +171,15 @@
         .slider-container input[type=range] { flex: 1; height: 24px; }
         select { background: #2b2b36; border: 1px solid #444; color: #fff; padding: 6px 8px; border-radius: 4px; }
 
-        /* 頁尾版權宣告 */
         .footer {
             text-align: center; padding: 15px 0 5px; margin-top: 20px;
             border-top: 1px solid #2b2b36; font-size: 0.8em; color: var(--text-sub);
         }
     </style>
-    <!-- Crypto-JS 用於 SHA-256 驗證 -->
+    <!-- Crypto-JS SHA-256 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+    <!-- HTML5 QR Code 相機解碼庫 -->
+    <script src="https://unpkg.com/html5-qrcode"></script>
 </head>
 <body>
 
@@ -185,7 +203,10 @@
                 <label>連線密碼:</label>
                 <input type="password" id="server-pass" placeholder="若無啟用密碼請留空">
             </div>
-            <button class="btn-connect" onclick="connectOBS()">建立連線</button>
+            <div class="btn-group-conn">
+                <button class="btn-connect" onclick="connectOBS()">建立連線</button>
+                <button class="btn-scan" onclick="startQRScan()">📷 掃 QR Code</button>
+            </div>
         </div>
     </div>
 
@@ -236,6 +257,12 @@
     </div>
 </div>
 
+<!-- QR Code 掃描彈窗 -->
+<div id="qr-modal">
+    <div id="reader"></div>
+    <button class="btn-close-scan" onclick="stopQRScan()">關閉相機</button>
+</div>
+
 <!-- 頁尾版權宣告 -->
 <footer class="footer">
     &copy; anshaer.com & 早.cc & Anaher
@@ -251,6 +278,75 @@
 
     let sourceRatios = {};
     let audioInputNames = new Set();
+    let html5QrCode = null;
+
+    // 網頁載入時自動解析 URL 帶入的參數
+    window.onload = () => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const ipParam = urlParams.get('ip');
+        const portParam = urlParams.get('port');
+        const passParam = urlParams.get('pass');
+
+        if (ipParam) document.getElementById("server-ip").value = ipParam;
+        if (portParam) document.getElementById("server-port").value = portParam;
+        if (passParam) document.getElementById("server-pass").value = passParam;
+
+        if (ipParam) connectOBS(); // 如果有 IP 參數就自動嘗試連線
+    };
+
+    /* QR Code 相機掃描邏輯 */
+    function startQRScan() {
+        document.getElementById("qr-modal").style.display = "flex";
+        html5QrCode = new Html5Qrcode("reader");
+
+        html5QrCode.start(
+            { facingMode: "environment" },
+            { fps: 10, qrbox: { width: 250, height: 250 } },
+            (decodedText) => {
+                parseOBSQRText(decodedText);
+                stopQRScan();
+            },
+            (errorMessage) => {}
+        ).catch(err => {
+            alert("無法啟動相機，請確認是否有授予網頁相機存取權限。");
+            stopQRScan();
+        });
+    }
+
+    function stopQRScan() {
+        if (html5QrCode) {
+            html5QrCode.stop().then(() => {
+                html5QrCode.clear();
+                document.getElementById("qr-modal").style.display = "none";
+            }).catch(() => {
+                document.getElementById("qr-modal").style.display = "none";
+            });
+        } else {
+            document.getElementById("qr-modal").style.display = "none";
+        }
+    }
+
+    /* 解析 OBS 產生的 obsws:// 格式 */
+    function parseOBSQRText(text) {
+        try {
+            // obsws://192.168.1.131:4455/zxcvbn
+            let raw = text.replace("obsws://", "");
+            let parts = raw.split("/");
+            let pass = parts[1] || "";
+            let hostParts = parts[0].split(":");
+            let ip = hostParts[0];
+            let port = hostParts[1] || "4455";
+
+            document.getElementById("server-ip").value = ip;
+            document.getElementById("server-port").value = port;
+            document.getElementById("server-pass").value = pass;
+
+            alert(`成功讀取 OBS 設定！\nIP: ${ip}\nPort: ${port}\n密碼: ${pass}`);
+            connectOBS();
+        } catch (e) {
+            alert("QR Code 格式不符合 OBS WebSocket 規格：" + text);
+        }
+    }
 
     function toggleConnPanel() {
         const header = document.getElementById("conn-header");
@@ -280,7 +376,6 @@
     function handleMessage(msg) {
         if (msg.op === 0) {
             const password = document.getElementById("server-pass").value;
-            // eventSubscriptions 設為 255 (接收全訂閱事件)，並明確定義 Identify
             let identifyPayload = { op: 1, d: { rpcVersion: 1, eventSubscriptions: 255 } };
 
             if (msg.d.authentication) {
@@ -346,14 +441,12 @@
             }
         }
 
-        // 回應處理
         if (msg.op === 7) {
             const reqType = msg.d.requestType;
             const resData = msg.d.responseData;
             const reqId = msg.d.requestId;
             const status = msg.d.requestStatus;
 
-            // 修復：捕捉創建來源時如果發生的權限問題或錯誤
             if (reqId === "CreateImageSource") {
                 document.getElementById("upload-btn").innerText = "選取照片並上傳至 OBS";
                 document.getElementById("upload-btn").disabled = false;
@@ -443,7 +536,6 @@
         sendRequest("GetRecordStatus");
     }
 
-    /* 修復版圖片上傳邏輯 */
     function uploadImageToOBS(fileInput) {
         const file = fileInput.files[0];
         if (!file) return;
@@ -495,7 +587,6 @@
                 const compressedBase64 = canvas.toDataURL("image/jpeg", 0.7);
                 const htmlContent = `data:text/html;charset=utf-8,<html><head><style>body{margin:0;padding:0;overflow:hidden;background:transparent;display:flex;justify-content:center;align-items:center;height:100vh;}img{max-width:100%;max-height:100%;object-fit:contain;}</style></head><body><img src="${compressedBase64}"/></body></html>`;
 
-                // 發送 CreateInput 建立瀏覽器來源
                 sendRequest("CreateInput", {
                     sceneName: currentSceneName,
                     inputName: sourceName,
