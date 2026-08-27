@@ -56,17 +56,23 @@
         .btn-record { background: #1976d2; }
         .btn-record.active { background: var(--danger-color); }
 
-        /* 頁籤排版 */
-        .tab-nav { display: flex; border-bottom: 2px solid #333; margin-bottom: 12px; }
+        /* 頁籤排版與刷新按鈕 */
+        .tab-nav-container { display: flex; align-items: center; border-bottom: 2px solid #333; margin-bottom: 12px; }
+        .tab-nav { display: flex; flex: 1; }
         .tab-btn {
             flex: 1; padding: 10px 0; text-align: center; background: none; border: none;
             color: var(--text-sub); font-size: 0.95em; font-weight: bold; cursor: pointer;
             border-bottom: 3px solid transparent; margin-bottom: -2px;
         }
         .tab-btn.active { color: var(--accent-color); border-bottom-color: var(--accent-color); }
-
-        .tab-content { display: none; }
-        .tab-content.active { display: block; }
+        
+        /* (2) 手動刷新按鈕 */
+        .btn-refresh {
+            background: #2b2b36; border: 1px solid var(--accent-color); color: var(--accent-color);
+            padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer;
+            margin-left: 8px; margin-bottom: 4px; font-size: 0.85em; white-space: nowrap;
+        }
+        .btn-refresh:active { background: var(--accent-color); color: #000; }
 
         /* 列表與卡片 */
         ul { list-style: none; padding: 0; margin: 0; }
@@ -75,6 +81,7 @@
             display: flex; flex-direction: column; gap: 10px;
         }
         .card-row { display: flex; justify-content: space-between; align-items: center; }
+        .btn-group-right { display: flex; gap: 6px; align-items: center; }
 
         /* 上傳圖片卡片 */
         .upload-card { border: 1px dashed var(--accent-color); background: #181820; }
@@ -109,11 +116,18 @@
         .scene-item.active { border-left-color: var(--accent-color); background: #252535; font-weight: bold; }
 
         .icon-btn {
-            background: #2b2b36; border: 1px solid #444; color: #fff; padding: 8px 14px;
-            border-radius: 4px; font-size: 0.85em; cursor: pointer; min-width: 75px; text-align: center;
+            background: #2b2b36; border: 1px solid #444; color: #fff; padding: 8px 12px;
+            border-radius: 4px; font-size: 0.85em; cursor: pointer; text-align: center;
         }
         .icon-btn.muted { background: var(--danger-color); border-color: var(--danger-color); }
         .icon-btn.visible { background: var(--success-color); border-color: var(--success-color); }
+        
+        /* (1) 刪除按鈕樣式 */
+        .btn-delete {
+            background: #3a1a1a; border: 1px solid var(--danger-color); color: var(--danger-color);
+            padding: 8px 10px; border-radius: 4px; font-size: 0.85em; cursor: pointer;
+        }
+        .btn-delete:active { background: var(--danger-color); color: #fff; }
 
         .slider-container { display: flex; align-items: center; gap: 8px; width: 100%; }
         .slider-container span { font-size: 0.8em; color: var(--text-sub); width: 35px; }
@@ -143,11 +157,14 @@
     <button id="btn-toggle-record" class="btn-action btn-record" onclick="toggleRecord()">開始錄影</button>
 </div>
 
-<!-- 頁籤導覽 -->
-<div class="tab-nav">
-    <button class="tab-btn active" onclick="switchTab('tab-scenes', this)">場景</button>
-    <button class="tab-btn" onclick="switchTab('tab-sources', this)">來源與排版</button>
-    <button class="tab-btn" onclick="switchTab('tab-audio', this)">音軌控制</button>
+<!-- 頁籤導覽 + (2) 手動刷新按鈕 -->
+<div class="tab-nav-container">
+    <div class="tab-nav">
+        <button class="tab-btn active" onclick="switchTab('tab-scenes', this)">場景</button>
+        <button class="tab-btn" onclick="switchTab('tab-sources', this)">來源與排版</button>
+        <button class="tab-btn" onclick="switchTab('tab-audio', this)">音軌控制</button>
+    </div>
+    <button class="btn-refresh" onclick="manualRefresh()">↻ 刷新</button>
 </div>
 
 <!-- 分頁 1: 場景列表 -->
@@ -207,6 +224,16 @@
         }
     }
 
+    /* (2) 全面手動刷新：同步電腦端最新的所有狀態 */
+    function manualRefresh() {
+        if (!ws || ws.readyState !== WebSocket.OPEN) return;
+        sendRequest("GetVideoSettings");
+        sendRequest("GetSceneList");
+        sendRequest("GetInputList");
+        sendRequest("GetStreamStatus");
+        sendRequest("GetRecordStatus");
+    }
+
     function handleMessage(msg) {
         if (msg.op === 0) {
             ws.send(JSON.stringify({ op: 1, d: { rpcVersion: 1, eventSubscriptions: 255 } }));
@@ -216,9 +243,7 @@
             document.getElementById("conn-status").innerText = "已連線";
             document.getElementById("conn-status").style.color = "var(--success-color)";
             
-            sendRequest("GetVideoSettings");
-            sendRequest("GetSceneList");
-            sendRequest("GetInputList");
+            manualRefresh();
             
             clearInterval(refreshTimer);
             refreshTimer = setInterval(() => {
@@ -247,6 +272,10 @@
             }
             if (eventType === "InputAudioBalanceChanged" && !isInteracting) {
                 updateBalanceUI(eventData.inputName, eventData.inputAudioBalance);
+            }
+            // OBS 畫面上刪除或新增元件時即時同步
+            if (eventType === "SceneItemCreated" || eventType === "SceneItemRemoved") {
+                sendRequest("GetSceneItemList", { sceneName: currentSceneName });
             }
         }
 
@@ -295,6 +324,10 @@
                 sendRequest("GetSceneItemList", { sceneName: currentSceneName });
             }
 
+            if (reqId === "RemoveSceneItem") {
+                sendRequest("GetSceneItemList", { sceneName: currentSceneName });
+            }
+
             if (reqId.startsWith("InitVol_")) updateVolumeUI(reqId.replace("InitVol_", ""), resData.inputVolumeMul);
             if (reqId.startsWith("InitMute_")) updateMuteUI(reqId.replace("InitMute_", ""), resData.inputMuted);
             if (reqId.startsWith("InitBal_")) updateBalanceUI(reqId.replace("InitBal_", ""), resData.inputAudioBalance);
@@ -302,7 +335,7 @@
         }
     }
 
-    /* --- 改用 OBS 瀏覽器元件 (browser_source) 顯示圖片：零閃退且極速 --- */
+    /* 圖片上傳 (Browser Source 極速穩定版) */
     function uploadImageToOBS(fileInput) {
         const file = fileInput.files[0];
         if (!file) return;
@@ -320,7 +353,6 @@
         reader.onload = function (e) {
             const img = new Image();
             img.onload = function () {
-                // 限制解析度以提升傳輸流暢度 (800px 寬高即可，渲染極快)
                 const MAX_LIMIT = 800;
                 let width = img.width, height = img.height;
 
@@ -340,23 +372,14 @@
                 const ctx = canvas.getContext("2d");
                 ctx.drawImage(img, 0, 0, width, height);
 
-                // 產出極輕量 Base64 網頁圖像
                 const compressedBase64 = canvas.toDataURL("image/jpeg", 0.7);
-
-                // 組合為標準 HTML 網頁語法
                 const htmlContent = `data:text/html;charset=utf-8,<html><head><style>body{margin:0;padding:0;overflow:hidden;background:transparent;display:flex;justify-content:center;align-items:center;height:100vh;}img{max-width:100%;max-height:100%;object-fit:contain;}</style></head><body><img src="${compressedBase64}"/></body></html>`;
 
-                // 透過 CreateInput 建立為 browser_source (完全不會引發 OBS C++ 原生崩潰)
                 sendRequest("CreateInput", {
                     sceneName: currentSceneName,
                     inputName: sourceName,
                     inputKind: "browser_source",
-                    inputSettings: {
-                        url: htmlContent,
-                        width: width,
-                        height: height,
-                        css: ""
-                    },
+                    inputSettings: { url: htmlContent, width: width, height: height, css: "" },
                     sceneItemEnabled: true
                 }, "CreateImageSource");
             };
@@ -379,7 +402,7 @@
         });
     }
 
-    /* --- 2. 來源列表與保持比例連動 --- */
+    /* --- 2. 來源列表 (加入刪除鍵 + 確認彈窗) --- */
     function renderSourceList(sources) {
         const el = document.getElementById("sources-list");
         el.innerHTML = "";
@@ -402,11 +425,15 @@
             li.innerHTML = `
                 <div class="card-row">
                     <strong>${item.sourceName}</strong>
-                    <button id="src-btn-${item.sceneItemId}" 
-                            class="icon-btn ${item.sceneItemEnabled ? 'visible' : ''}" 
-                            onclick="toggleSourceVisible(${item.sceneItemId}, ${!item.sceneItemEnabled})">
-                        ${item.sceneItemEnabled ? '顯示中' : '已隱藏'}
-                    </button>
+                    <div class="btn-group-right">
+                        <button id="src-btn-${item.sceneItemId}" 
+                                class="icon-btn ${item.sceneItemEnabled ? 'visible' : ''}" 
+                                onclick="toggleSourceVisible(${item.sceneItemId}, ${!item.sceneItemEnabled})">
+                            ${item.sceneItemEnabled ? '顯示中' : '已隱藏'}
+                        </button>
+                        <!-- (1) 刪除按鈕 -->
+                        <button class="btn-delete" onclick="deleteSource(${item.sceneItemId}, '${item.sourceName}')">刪除</button>
+                    </div>
                 </div>
 
                 <div class="transform-box ${isAudioOnly ? 'disabled' : ''}">
@@ -435,6 +462,17 @@
             `;
             el.appendChild(li);
         });
+    }
+
+    /* (1) 刪除來源 function（附帶二次確認彈窗） */
+    function deleteSource(itemId, sourceName) {
+        const confirmDelete = confirm(`確定要從 OBS 畫面中刪除「${sourceName}」嗎？\n(此動作無法復原)`);
+        if (confirmDelete) {
+            sendRequest("RemoveSceneItem", {
+                sceneName: currentSceneName,
+                sceneItemId: itemId
+            }, "RemoveSceneItem");
+        }
     }
 
     function applyTransform(itemId, changedType) {
