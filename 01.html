@@ -1,0 +1,957 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>MPCO</title>
+    <style>
+        :root {
+            --bg-color: #121216;
+            --card-bg: #1e1e24;
+            --accent-color: #00bcd4;
+            --danger-color: #ff5252;
+            --success-color: #4caf50;
+            --disabled-color: #0d0d10;
+            --text-main: #e0e0e0;
+            --text-sub: #a0a0a0;
+        }
+
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg-color); color: var(--text-main);
+            margin: 0; padding: 12px; font-size: 14px;
+            display: flex; flex-direction: column; min-height: 100vh;
+        }
+
+        .main-content { flex: 1; }
+        .collapsible-box {
+            background: var(--card-bg); border-radius: 8px; margin-bottom: 12px;
+            overflow: hidden; border: 1px solid #333;
+        }
+        .collapsible-header {
+            padding: 12px; background: #252530; cursor: pointer;
+            display: flex; justify-content: space-between; align-items: center;
+            font-weight: bold; color: var(--accent-color); font-size: 0.95em;
+        }
+        .collapsible-header .arrow { transition: transform 0.2s ease; }
+        .collapsible-header.open .arrow { transform: rotate(180deg); }
+        .collapsible-body {
+            padding: 12px; display: none; flex-direction: column; gap: 10px;
+            background: var(--card-bg);
+        }
+        .collapsible-body.show { display: flex; }
+
+        .input-row { display: flex; align-items: center; gap: 8px; }
+        .input-row label { width: 65px; font-size: 0.85em; color: var(--text-sub); }
+        .input-row input {
+            flex: 1; background: #2b2b36; border: 1px solid #444; color: #fff;
+            padding: 8px 12px; border-radius: 6px; font-size: 0.9em; outline: none;
+        }
+
+        .btn-group-conn { display: grid; grid-template-columns: 2fr 1fr; gap: 8px; margin-top: 4px; }
+        .btn-connect {
+            background: var(--accent-color); border: none; color: #000;
+            padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer;
+            text-align: center; font-size: 0.95em;
+        }
+        .btn-scan {
+            background: #2b2b36; border: 1px solid var(--accent-color); color: var(--accent-color);
+            padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer;
+            text-align: center; font-size: 0.9em;
+        }
+
+        #qr-modal {
+            display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(0,0,0,0.85); z-index: 9999; flex-direction: column;
+            justify-content: center; align-items: center; padding: 20px;
+        }
+        #reader { width: 100%; max-width: 320px; background: #000; border-radius: 8px; overflow: hidden; }
+        .btn-close-scan {
+            margin-top: 15px; background: var(--danger-color); border: none; color: #fff;
+            padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer;
+        }
+
+        .status-header {
+            background: var(--card-bg); padding: 12px; border-radius: 8px; margin-bottom: 12px;
+            display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; text-align: center;
+        }
+        .stat-item .label { font-size: 0.7em; color: var(--text-sub); }
+        .stat-item .val { font-size: 0.95em; font-weight: bold; color: var(--accent-color); margin-top: 2px; }
+
+        .action-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+        .btn-action {
+            padding: 12px; border: none; border-radius: 8px; font-weight: bold;
+            color: #fff; cursor: pointer; font-size: 1em; text-align: center;
+        }
+        .btn-stream { background: #388e3c; }
+        .btn-stream.active { background: var(--danger-color); }
+        .btn-record { background: #1976d2; }
+        .btn-record.active { background: var(--danger-color); }
+
+        .tab-nav-container { display: flex; align-items: center; border-bottom: 2px solid #333; margin-bottom: 12px; }
+        .tab-nav { display: flex; flex: 1; }
+        .tab-btn {
+            flex: 1; padding: 10px 0; text-align: center; background: none; border: none;
+            color: var(--text-sub); font-size: 0.95em; font-weight: bold; cursor: pointer;
+            border-bottom: 3px solid transparent; margin-bottom: -2px;
+        }
+        .tab-btn.active { color: var(--accent-color); border-bottom-color: var(--accent-color); }
+        
+        .btn-refresh {
+            background: #2b2b36; border: 1px solid var(--accent-color); color: var(--accent-color);
+            padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer;
+            margin-left: 8px; margin-bottom: 4px; font-size: 0.85em; white-space: nowrap;
+        }
+        .btn-refresh:active { background: var(--accent-color); color: #000; }
+
+        .tab-content { display: none !important; }
+        .tab-content.active { display: block !important; }
+
+        ul { list-style: none; padding: 0; margin: 0; }
+        .card-item {
+            background: var(--card-bg); border-radius: 8px; padding: 12px; margin-bottom: 10px;
+            display: flex; flex-direction: column; gap: 10px;
+        }
+        .card-row { display: flex; justify-content: space-between; align-items: center; }
+        .btn-group-right { display: flex; gap: 6px; align-items: center; }
+
+        .upload-card { border: 1px dashed var(--accent-color); background: #181820; }
+        .upload-card input[type=text] {
+            width: 100%; background: #2b2b36; border: 1px solid #444; color: #fff;
+            padding: 8px; border-radius: 4px; outline: none;
+        }
+
+        .transform-box {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+            background: #252530; padding: 8px; border-radius: 6px;
+        }
+        .ratio-row {
+            grid-column: span 2; display: flex; align-items: center; gap: 6px;
+            font-size: 0.8em; color: var(--accent-color); margin-bottom: 2px;
+        }
+        .input-group { display: flex; align-items: center; gap: 4px; font-size: 0.8em; color: var(--text-sub); }
+        .input-group input[type=number] {
+            width: 100%; background: #1a1a22; border: 1px solid #444; color: #fff;
+            padding: 4px 6px; border-radius: 4px; text-align: center; font-size: 0.9em;
+        }
+
+        .scene-item {
+            padding: 14px; background: var(--card-bg); border-radius: 8px; margin-bottom: 8px;
+            font-size: 1em; cursor: pointer; border-left: 4px solid transparent;
+        }
+        .scene-item.active { border-left-color: var(--accent-color); background: #252535; font-weight: bold; }
+
+        .icon-btn {
+            background: #2b2b36; border: 1px solid #444; color: #fff; padding: 8px 12px;
+            border-radius: 4px; font-size: 0.85em; cursor: pointer; text-align: center;
+        }
+        .icon-btn.muted { background: var(--danger-color); border-color: var(--danger-color); }
+        .icon-btn.visible { background: var(--success-color); border-color: var(--success-color); }
+        
+        .btn-delete {
+            background: #3a1a1a; border: 1px solid var(--danger-color); color: var(--danger-color);
+            padding: 8px 10px; border-radius: 4px; font-size: 0.85em; cursor: pointer;
+        }
+        .btn-delete:active { background: var(--danger-color); color: #fff; }
+
+        .slider-container { display: flex; align-items: center; gap: 8px; width: 100%; }
+        .slider-container span { font-size: 0.8em; color: var(--text-sub); width: 35px; }
+        .slider-container input[type=range] { flex: 1; height: 24px; }
+        select { background: #2b2b36; border: 1px solid #444; color: #fff; padding: 6px 8px; border-radius: 4px; }
+
+        /* 新增：音軌波形 Canvas 樣式 */
+        .audio-waveform-canvas {
+            width: 100%;
+            height: 45px;
+            background: #141419;
+            border-radius: 6px;
+            border: 1px solid #2b2b36;
+            margin-top: 4px;
+        }
+
+        .footer {
+            text-align: center; padding: 15px 0 5px; margin-top: 20px;
+            border-top: 1px solid #2b2b36; font-size: 0.8em; color: var(--text-sub);
+        }
+    </style>
+ 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+</head>
+<body>
+
+<div class="main-content">
+
+    <div class="collapsible-box">
+        <div class="collapsible-header open" id="conn-header" onclick="toggleConnPanel()">
+            <span>⚙ 連線與進階設定</span>
+            <span class="arrow">▼</span>
+        </div>
+        <div class="collapsible-body show" id="conn-body">
+            <div class="input-row">
+                <label>電腦 IP:</label>
+                <input type="text" id="server-ip" value="192.168.1.200" placeholder="例: 192.168.1.100">
+            </div>
+            <div class="input-row">
+                <label>連接埠:</label>
+                <input type="number" id="server-port" value="4455" placeholder="預設 4455">
+            </div>
+            <div class="input-row">
+                <label>連線密碼:</label>
+                <input type="password" id="server-pass" placeholder="若無啟用密碼請留空">
+            </div>
+            <div class="btn-group-conn">
+                <button class="btn-connect" onclick="connectOBS()">建立連線</button>
+                <button class="btn-scan" onclick="startQRScan()">📷 掃 QR Code</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="status-header">
+        <div class="stat-item"><div class="label">連線狀態</div><div id="conn-status" class="val" style="color:var(--danger-color)">未連線</div></div>
+        <div class="stat-item"><div class="label">輸出畫質</div><div id="video-res" class="val">--</div></div>
+        <div class="stat-item"><div class="label">位元率</div><div id="bitrate" class="val">0 kbps</div></div>
+        <div class="stat-item"><div class="label">掉幀</div><div id="dropped-frames" class="val">0%</div></div>
+    </div>
+
+    <div class="action-btns">
+        <button id="btn-toggle-stream" class="btn-action btn-stream" onclick="toggleStream()">開始串流</button>
+        <button id="btn-toggle-record" class="btn-action btn-record" onclick="toggleRecord()">開始錄影</button>
+    </div>
+
+    <div class="tab-nav-container">
+        <div class="tab-nav">
+            <button class="tab-btn active" onclick="switchTab('tab-scenes', this)">場景</button>
+            <button class="tab-btn" onclick="switchTab('tab-sources', this)">畫面來源</button>
+            <button class="tab-btn" onclick="switchTab('tab-audio', this)">音軌控制</button>
+        </div>
+        <button class="btn-refresh" onclick="manualRefresh()">↻ 刷新</button>
+    </div>
+
+    <div id="tab-scenes" class="tab-content active">
+        <ul id="scenes-list"></ul>
+    </div>
+
+    <div id="tab-sources" class="tab-content">
+        <div class="card-item upload-card">
+            <strong>新增手機圖片來源</strong>
+            <input type="text" id="new-source-name" placeholder="輸入來源名稱 (留空預設為: 手機圖片)">
+            <input type="file" id="img-uploader" accept="image/*" style="display:none;" onchange="uploadImageToOBS(this)">
+            <button class="btn-action btn-record" id="upload-btn" style="width:100%; font-size:0.9em; padding:10px;" onclick="document.getElementById('img-uploader').click()">選取照片並上傳至 OBS</button>
+        </div>
+
+        <ul id="sources-list"></ul>
+    </div>
+
+    <div id="tab-audio" class="tab-content">
+        <ul id="audio-list"></ul>
+    </div>
+</div>
+
+<div id="qr-modal">
+    <div id="reader"></div>
+    <button class="btn-close-scan" onclick="stopQRScan()">關閉相機</button>
+</div>
+
+<footer class="footer">
+    &copy; anshaer.com & 早.cc & Anaher
+</footer>
+
+<script>
+    let ws = null;
+    let refreshTimer = null;
+    let isStreaming = false;
+    let isRecording = false;
+    let currentSceneName = "";
+    let isInteracting = false; 
+
+    let sourceRatios = {};
+    let audioInputNames = new Set();
+    let html5QrCode = null;
+
+    // 儲存各音軌波形數據點歷史陣列
+    let audioHistories = {};
+
+    window.onload = () => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const ipParam = urlParams.get('ip');
+        const portParam = urlParams.get('port');
+        const passParam = urlParams.get('pass');
+
+        if (ipParam) document.getElementById("server-ip").value = ipParam;
+        if (portParam) document.getElementById("server-port").value = portParam;
+        if (passParam) document.getElementById("server-pass").value = passParam;
+
+        if (ipParam) connectOBS(); 
+    };
+
+    /* QR Code 相機掃描邏輯 */
+    function startQRScan() {
+        document.getElementById("qr-modal").style.display = "flex";
+        html5QrCode = new Html5Qrcode("reader");
+
+        html5QrCode.start(
+            { facingMode: "environment" },
+            { fps: 10, qrbox: { width: 250, height: 250 } },
+            (decodedText) => {
+                parseOBSQRText(decodedText);
+                stopQRScan();
+            },
+            (errorMessage) => {}
+        ).catch(err => {
+            alert("無法啟動相機，請確認是否有授予網頁相機存取權限。");
+            stopQRScan();
+        });
+    }
+
+    function stopQRScan() {
+        if (html5QrCode) {
+            html5QrCode.stop().then(() => {
+                html5QrCode.clear();
+                document.getElementById("qr-modal").style.display = "none";
+            }).catch(() => {
+                document.getElementById("qr-modal").style.display = "none";
+            });
+        } else {
+            document.getElementById("qr-modal").style.display = "none";
+        }
+    }
+
+    function parseOBSQRText(text) {
+        try {
+            let raw = text.replace("obsws://", "");
+            let parts = raw.split("/");
+            let pass = parts[1] || "";
+            let hostParts = parts[0].split(":");
+            let ip = hostParts[0];
+            let port = hostParts[1] || "4455";
+
+            document.getElementById("server-ip").value = ip;
+            document.getElementById("server-port").value = port;
+            document.getElementById("server-pass").value = pass;
+
+            alert(`成功讀取 OBS 設定！\nIP: ${ip}\nPort: ${port}\n密碼: ${pass}`);
+            connectOBS();
+        } catch (e) {
+            alert("QR Code 格式不符合 OBS WebSocket 規格：" + text);
+        }
+    }
+
+    function toggleConnPanel() {
+        const header = document.getElementById("conn-header");
+        const body = document.getElementById("conn-body");
+        header.classList.toggle("open");
+        body.classList.toggle("show");
+    }
+
+    function connectOBS() {
+        if (ws) ws.close();
+        const ip = document.getElementById("server-ip").value.trim();
+        const port = document.getElementById("server-port").value.trim() || "4455";
+
+        ws = new WebSocket(`ws://${ip}:${port}`);
+
+        ws.onopen = () => console.log("WebSocket 已連接，等待驗證...");
+        ws.onmessage = (event) => handleMessage(JSON.parse(event.data));
+        ws.onclose = () => {
+            document.getElementById("conn-status").innerText = "未連線";
+            document.getElementById("conn-status").style.color = "var(--danger-color)";
+            document.getElementById("video-res").innerText = "--";
+            clearInterval(refreshTimer);
+        };
+        ws.onerror = () => alert("連接失敗！請確認 IP、Port 是否正確，或檢查 OBS WebSocket 是否開啟。");
+    }
+
+    function handleMessage(msg) {
+        if (msg.op === 0) {
+            const password = document.getElementById("server-pass").value;
+            // 255 代表一般基礎事件訂閱，(1 << 16) 代表 InputVolumeMeters 音量監控訂閱
+            let identifyPayload = { op: 1, d: { rpcVersion: 1, eventSubscriptions: 255 | (1 << 16) } };
+
+            if (msg.d.authentication) {
+                if (!password) {
+                    alert("OBS 設有連線密碼，請填寫密碼後重新連線！");
+                    ws.close();
+                    return;
+                }
+
+                const { salt, challenge } = msg.d.authentication;
+                const secretHash = CryptoJS.SHA256(password + salt).toString(CryptoJS.enc.Base64);
+                const authResponse = CryptoJS.SHA256(secretHash + challenge).toString(CryptoJS.enc.Base64);
+
+                identifyPayload.d.authentication = authResponse;
+            }
+
+            ws.send(JSON.stringify(identifyPayload));
+        }
+
+        if (msg.op === 2) {
+            document.getElementById("conn-status").innerText = "已連線";
+            document.getElementById("conn-status").style.color = "var(--success-color)";
+            
+            const header = document.getElementById("conn-header");
+            const body = document.getElementById("conn-body");
+            if (header.classList.contains("open")) {
+                header.classList.remove("open");
+                body.classList.remove("show");
+            }
+
+            manualRefresh();
+            
+            clearInterval(refreshTimer);
+            refreshTimer = setInterval(() => {
+                sendRequest("GetStreamStatus");
+                sendRequest("GetRecordStatus");
+            }, 2000);
+        }
+
+        if (msg.op === 5) {
+            const { eventType, eventData } = msg.d;
+
+            // 新增：處理即時音速與波形事件
+            if (eventType === "InputVolumeMeters") {
+                if (eventData.inputs && eventData.inputs.length > 0) {
+                    eventData.inputs.forEach(input => {
+                        const inputName = input.inputName;
+                        if (input.inputLevelsMul && input.inputLevelsMul.length > 0) {
+                            const volData = input.inputLevelsMul[0]; // [0] 代表振幅 Magnitude (0~1.0)
+                            if (volData && volData[0] !== undefined) {
+                                drawWaveform(inputName, volData[0]);
+                            }
+                        }
+                    });
+                }
+            }
+
+            if (eventType === "CurrentProgramSceneChanged") {
+                currentSceneName = eventData.sceneName;
+                sendRequest("GetSceneList");
+            }
+            if (eventType === "SceneItemEnableStateChanged") {
+                updateSourceVisibilityUI(eventData.sceneItemId, eventData.sceneItemEnabled);
+            }
+            if (eventType === "SceneItemTransformChanged") {
+                updateTransformUI(eventData.sceneItemId, eventData.sceneItemTransform);
+            }
+            if (eventType === "InputMuteStateChanged") {
+                updateMuteUI(eventData.inputName, eventData.inputMuted);
+            }
+            if (eventType === "InputVolumeChanged" && !isInteracting) {
+                updateVolumeUI(eventData.inputName, eventData.inputVolumeMul);
+            }
+            if (eventType === "InputAudioBalanceChanged" && !isInteracting) {
+                updateBalanceUI(eventData.inputName, eventData.inputAudioBalance);
+            }
+            if (eventType === "SceneItemCreated" || eventType === "SceneItemRemoved") {
+                sendRequest("GetInputList");
+            }
+        }
+
+        if (msg.op === 7) {
+            const reqType = msg.d.requestType;
+            const resData = msg.d.responseData;
+            const reqId = msg.d.requestId;
+            const status = msg.d.requestStatus;
+
+            if (reqId === "CreateImageSource") {
+                document.getElementById("upload-btn").innerText = "選取照片並上傳至 OBS";
+                document.getElementById("upload-btn").disabled = false;
+
+                if (status.result) {
+                    alert("圖片成功新增至 OBS 畫面！");
+                    sendRequest("GetSceneItemList", { sceneName: currentSceneName });
+                } else {
+                    alert("新增圖片失敗: " + (status.comment || "存取權限不足或參數錯誤"));
+                }
+            }
+
+            if (status.result) {
+                if (reqType === "GetVideoSettings") {
+                    const fps = Math.round(resData.fpsNumerator / resData.fpsDenominator);
+                    document.getElementById("video-res").innerText = `${resData.outputWidth}x${resData.outputHeight} p${fps}`;
+                }
+
+                if (reqType === "GetStreamStatus") {
+                    document.getElementById("bitrate").innerText = `${resData.outputBytes ? Math.round((resData.outputBytes * 8) / 1024) : 0} kbps`;
+                    const total = resData.outputTotalFrames || 0;
+                    const skipped = resData.outputSkippedFrames || 0;
+                    document.getElementById("dropped-frames").innerText = `${total > 0 ? ((skipped / total) * 100).toFixed(1) : 0}%`;
+                    
+                    isStreaming = resData.outputActive;
+                    const sBtn = document.getElementById("btn-toggle-stream");
+                    sBtn.innerText = isStreaming ? "關閉串流" : "開始串流";
+                    sBtn.className = `btn-action btn-stream ${isStreaming ? 'active' : ''}`;
+                }
+
+                if (reqType === "GetRecordStatus") {
+                    isRecording = resData.outputActive;
+                    const rBtn = document.getElementById("btn-toggle-record");
+                    rBtn.innerText = isRecording ? "停止錄影" : "開始錄影";
+                    rBtn.className = `btn-action btn-record ${isRecording ? 'active' : ''}`;
+                }
+
+                if (reqType === "GetSceneList") {
+                    currentSceneName = resData.currentProgramSceneName;
+                    renderSceneList(resData.scenes, currentSceneName);
+                    sendRequest("GetSceneItemList", { sceneName: currentSceneName });
+                }
+
+                if (reqType === "GetInputList") {
+                    audioInputNames.clear();
+                    resData.inputs.forEach(i => {
+                        const kind = (i.inputKind || "").toLowerCase();
+                        if (kind.includes("audio") || kind.includes("wasapi") || kind.includes("mic") || kind.includes("sound")) {
+                            audioInputNames.add(i.inputName);
+                        }
+                    });
+                    buildAudioListDOM(resData.inputs);
+                    sendRequest("GetSceneItemList", { sceneName: currentSceneName });
+                }
+
+                if (reqType === "GetSceneItemList") {
+                    renderSourceList(resData.sceneItems);
+                }
+
+                if (reqId === "RemoveSceneItem") {
+                    sendRequest("GetInputList");
+                }
+
+                if (reqId.startsWith("InitVol_")) updateVolumeUI(reqId.replace("InitVol_", ""), resData.inputVolumeMul);
+                if (reqId.startsWith("InitMute_")) updateMuteUI(reqId.replace("InitMute_", ""), resData.inputMuted);
+                if (reqId.startsWith("InitBal_")) updateBalanceUI(reqId.replace("InitBal_", ""), resData.inputAudioBalance);
+                if (reqId.startsWith("InitMon_")) updateMonitorUI(reqId.replace("InitMon_", ""), resData.monitorType);
+            }
+        }
+    }
+
+    function sendRequest(requestType, requestData = {}, requestId = null) {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+                op: 6,
+                d: { requestType, requestId: requestId || requestType, requestData }
+            }));
+        }
+    }
+
+    function manualRefresh() {
+        if (!ws || ws.readyState !== WebSocket.OPEN) return;
+        sendRequest("GetVideoSettings");
+        sendRequest("GetSceneList");
+        sendRequest("GetInputList");
+        sendRequest("GetStreamStatus");
+        sendRequest("GetRecordStatus");
+    }
+
+    function uploadImageToOBS(fileInput) {
+        const file = fileInput.files[0];
+        if (!file) return;
+
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+            alert("請先連線至 OBS 再嘗試上傳！");
+            fileInput.value = "";
+            return;
+        }
+
+        const isConfirmed = confirm(`確定要上傳「${file.name}」至 OBS 嗎？`);
+        if (!isConfirmed) {
+            fileInput.value = "";
+            return;
+        }
+
+        let sourceName = document.getElementById("new-source-name").value.trim();
+        if (!sourceName) {
+            sourceName = "手機圖片_" + Math.floor(Math.random() * 1000);
+        }
+
+        const btn = document.getElementById("upload-btn");
+        btn.innerText = "圖片處理解析中...";
+        btn.disabled = true;
+
+        const reader = new FileReader();
+        reader.onload = function (e) {
+            const img = new Image();
+            img.onload = function () {
+                const MAX_LIMIT = 800;
+                let width = img.width, height = img.height;
+
+                if (width > MAX_LIMIT || height > MAX_LIMIT) {
+                    if (width > height) {
+                        height = Math.round(height * (MAX_LIMIT / width));
+                        width = MAX_LIMIT;
+                    } else {
+                        width = Math.round(width * (MAX_LIMIT / height));
+                        height = MAX_LIMIT;
+                    }
+                }
+
+                const canvas = document.createElement("canvas");
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext("2d");
+                ctx.drawImage(img, 0, 0, width, height);
+
+                const compressedBase64 = canvas.toDataURL("image/jpeg", 0.7);
+                const htmlContent = `data:text/html;charset=utf-8,<html><head><style>body{margin:0;padding:0;overflow:hidden;background:transparent;display:flex;justify-content:center;align-items:center;height:100vh;}img{max-width:100%;max-height:100%;object-fit:contain;}</style></head><body><img src="${compressedBase64}"/></body></html>`;
+
+                sendRequest("CreateInput", {
+                    sceneName: currentSceneName,
+                    inputName: sourceName,
+                    inputKind: "browser_source",
+                    inputSettings: { url: htmlContent, width: width, height: height, css: "" },
+                    sceneItemEnabled: true
+                }, "CreateImageSource");
+            };
+            img.onerror = function() {
+                alert("圖片載入解析失敗！");
+                btn.innerText = "選取照片並上傳至 OBS";
+                btn.disabled = false;
+            };
+            img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+        fileInput.value = "";
+    }
+
+    /* --- 1. 場景列表 --- */
+    function renderSceneList(scenes, activeScene) {
+        const el = document.getElementById("scenes-list");
+        el.innerHTML = "";
+        scenes.forEach(s => {
+            const li = document.createElement("li");
+            li.className = `scene-item ${s.sceneName === activeScene ? 'active' : ''}`;
+            li.innerText = s.sceneName;
+            li.onclick = () => sendRequest("SetCurrentProgramScene", { sceneName: s.sceneName });
+            el.appendChild(li);
+        });
+    }
+
+    function isAudioKind(kindStr) {
+        if (!kindStr) return false;
+        const k = kindStr.toLowerCase();
+        return k.includes("audio") || k.includes("wasapi") || k.includes("mic") || k.includes("sound");
+    }
+
+    /* --- 2. 畫面來源列表 --- */
+    function renderSourceList(sources) {
+        const el = document.getElementById("sources-list");
+        el.innerHTML = "";
+
+        const visualSources = sources.filter(item => {
+            const name = item.sourceName;
+            const kind = (item.inputKind || "").toLowerCase();
+
+            if (audioInputNames.has(name)) return false;
+            if (isAudioKind(kind) || name.includes("音效") || name.includes("麥克風") || name.includes("audio")) {
+                return false;
+            }
+            return true;
+        });
+
+        if (visualSources.length === 0) {
+            el.innerHTML = `<li class="card-item" style="text-align:center; color:var(--text-sub);">當前場景無畫面來源</li>`;
+            return;
+        }
+
+        visualSources.forEach(item => {
+            const li = document.createElement("li");
+            li.className = "card-item";
+
+            const tf = item.sceneItemTransform || {};
+            const width = Math.round(tf.boundsWidth || (tf.sourceWidth * (tf.scaleX || 1)) || 100);
+            const height = Math.round(tf.boundsHeight || (tf.sourceHeight * (tf.scaleY || 1)) || 100);
+            const posX = Math.round(tf.positionX || 0);
+            const posY = Math.round(tf.positionY || 0);
+
+            sourceRatios[item.sceneItemId] = height > 0 ? (width / height) : 1;
+
+            li.innerHTML = `
+                <div class="card-row">
+                    <strong>${item.sourceName}</strong>
+                    <div class="btn-group-right">
+                        <button id="src-btn-${item.sceneItemId}" 
+                                class="icon-btn ${item.sceneItemEnabled ? 'visible' : ''}" 
+                                onclick="toggleSourceVisible(${item.sceneItemId}, ${!item.sceneItemEnabled})">
+                            ${item.sceneItemEnabled ? '顯示中' : '已隱藏'}
+                        </button>
+                        <button class="btn-delete" onclick="deleteSource(${item.sceneItemId}, '${item.sourceName}')">刪除</button>
+                    </div>
+                </div>
+
+                <div class="transform-box">
+                    <div class="ratio-row">
+                        <input type="checkbox" id="lock-ratio-${item.sceneItemId}" checked>
+                        <label for="lock-ratio-${item.sceneItemId}">保持等比例調整</label>
+                    </div>
+
+                    <div class="input-group">
+                        <span>寬W:</span>
+                        <input type="number" id="tf-w-${item.sceneItemId}" value="${width}" 
+                               onfocus="isInteracting=true" onblur="isInteracting=false"
+                               onchange="applyTransform(${item.sceneItemId}, 'w')">
+                    </div>
+                    <div class="input-group">
+                        <span>高H:</span>
+                        <input type="number" id="tf-h-${item.sceneItemId}" value="${height}" 
+                               onfocus="isInteracting=true" onblur="isInteracting=false"
+                               onchange="applyTransform(${item.sceneItemId}, 'h')">
+                    </div>
+                    <div class="input-group">
+                        <span>位X:</span>
+                        <input type="number" id="tf-x-${item.sceneItemId}" value="${posX}" 
+                               onfocus="isInteracting=true" onblur="isInteracting=false"
+                               onchange="applyTransform(${item.sceneItemId}, 'x')">
+                    </div>
+                    <div class="input-group">
+                        <span>位Y:</span>
+                        <input type="number" id="tf-y-${item.sceneItemId}" value="${posY}" 
+                               onfocus="isInteracting=true" onblur="isInteracting=false"
+                               onchange="applyTransform(${item.sceneItemId}, 'y')">
+                    </div>
+                </div>
+            `;
+            el.appendChild(li);
+        });
+    }
+
+    function deleteSource(itemId, sourceName) {
+        if (confirm(`確定要從 OBS 畫面中刪除「${sourceName}」嗎？`)) {
+            sendRequest("RemoveSceneItem", { sceneName: currentSceneName, sceneItemId: itemId }, "RemoveSceneItem");
+        }
+    }
+
+    function applyTransform(itemId, changedType) {
+        const elW = document.getElementById(`tf-w-${itemId}`);
+        const elH = document.getElementById(`tf-h-${itemId}`);
+        const elX = document.getElementById(`tf-x-${itemId}`);
+        const elY = document.getElementById(`tf-y-${itemId}`);
+        const isRatioLocked = document.getElementById(`lock-ratio-${itemId}`).checked;
+
+        let w = parseFloat(elW.value) || 10;
+        let h = parseFloat(elH.value) || 10;
+        const x = parseFloat(elX.value) || 0;
+        const y = parseFloat(elY.value) || 0;
+
+        const ratio = sourceRatios[itemId] || 1;
+
+        if (isRatioLocked) {
+            if (changedType === 'w') {
+                h = Math.round(w / ratio);
+                elH.value = h;
+            } else if (changedType === 'h') {
+                w = Math.round(h * ratio);
+                elW.value = w;
+            }
+        } else {
+            if (h > 0) sourceRatios[itemId] = w / h;
+        }
+
+        sendRequest("SetSceneItemTransform", {
+            sceneName: currentSceneName,
+            sceneItemId: itemId,
+            sceneItemTransform: {
+                positionX: x,
+                positionY: y,
+                boundsType: "OBS_BOUNDS_SCALE_INNER",
+                boundsWidth: w,
+                boundsHeight: h
+            }
+        });
+    }
+
+    function updateTransformUI(itemId, tf) {
+        if (!tf) return;
+        const elW = document.getElementById(`tf-w-${itemId}`);
+        const elH = document.getElementById(`tf-h-${itemId}`);
+        const elX = document.getElementById(`tf-x-${itemId}`);
+        const elY = document.getElementById(`tf-y-${itemId}`);
+
+        const w = Math.round(tf.boundsWidth || (tf.sourceWidth * (tf.scaleX || 1)) || 0);
+        const h = Math.round(tf.boundsHeight || (tf.sourceHeight * (tf.scaleY || 1)) || 0);
+
+        if (elW && !isInteracting) elW.value = w;
+        if (elH && !isInteracting) elH.value = h;
+        if (elX && !isInteracting) elX.value = Math.round(tf.positionX || 0);
+        if (elY && !isInteracting) elY.value = Math.round(tf.positionY || 0);
+
+        if (w > 0 && h > 0) {
+            sourceRatios[itemId] = w / h;
+        }
+    }
+
+    function toggleSourceVisible(itemId, enable) {
+        if (!currentSceneName) return;
+        updateSourceVisibilityUI(itemId, enable);
+        sendRequest("SetSceneItemEnabled", {
+            sceneName: currentSceneName,
+            sceneItemId: itemId,
+            sceneItemEnabled: enable
+        });
+        setTimeout(() => {
+            sendRequest("GetSceneItemList", { sceneName: currentSceneName });
+        }, 200);
+    }
+
+    function updateSourceVisibilityUI(itemId, enabled) {
+        const btn = document.getElementById(`src-btn-${itemId}`);
+        if (btn) {
+            btn.innerText = enabled ? '顯示中' : '已隱藏';
+            btn.className = `icon-btn ${enabled ? 'visible' : ''}`;
+            btn.onclick = () => toggleSourceVisible(itemId, !enabled);
+        }
+    }
+
+    /* --- 3. 音軌控制與繪製波形 --- */
+    function buildAudioListDOM(inputs) {
+        const el = document.getElementById("audio-list");
+        el.innerHTML = "";
+
+        const audioInputs = inputs.filter(i => {
+            const kind = (i.inputKind || "").toLowerCase();
+            const name = i.inputName;
+            return audioInputNames.has(name) || kind.includes("audio") || kind.includes("wasapi") || kind.includes("mic");
+        });
+
+        if (audioInputs.length === 0) {
+            el.innerHTML = `<li class="card-item" style="text-align:center; color:var(--text-sub);">無可控制的音訊輸入</li>`;
+            return;
+        }
+
+        audioInputs.forEach(i => {
+            const name = i.inputName;
+            // 初始化波形歷史數據陣列
+            if (!audioHistories[name]) {
+                audioHistories[name] = new Array(40).fill(0);
+            }
+
+            const li = document.createElement("li");
+            li.className = "card-item";
+            li.innerHTML = `
+                <div class="card-row">
+                    <strong>${name}</strong>
+                    <button class="icon-btn" id="mute-btn-${name}" onclick="toggleMute('${name}')">開音</button>
+                </div>
+
+                <!-- 動態音軌波形 Canvas 畫布 -->
+                <canvas class="audio-waveform-canvas" id="canvas-${name}" width="300" height="45"></canvas>
+
+                <div class="slider-container">
+                    <span>音量</span>
+                    <input type="range" id="vol-${name}" min="0" max="1" step="0.01" 
+                           ontouchstart="isInteracting=true" ontouchend="isInteracting=false"
+                           onmousedown="isInteracting=true" onmouseup="isInteracting=false"
+                           onchange="setVolume('${name}', this.value)">
+                </div>
+                <div class="slider-container">
+                    <span>平衡</span>
+                    <input type="range" id="pan-${name}" min="0" max="1" step="0.01" 
+                           ontouchstart="isInteracting=true" ontouchend="isInteracting=false"
+                           onmousedown="isInteracting=true" onmouseup="isInteracting=false"
+                           onchange="setPan('${name}', this.value)">
+                </div>
+                <div class="card-row">
+                    <span style="font-size:0.85em; color:var(--text-sub)">音訊監聽</span>
+                    <select id="monitor-${name}" onchange="setMonitor('${name}', this.value)">
+                        <option value="OBS_MONITORING_TYPE_NONE">關閉監聽</option>
+                        <option value="OBS_MONITORING_TYPE_MONITOR_ONLY">僅監聽 (不輸出)</option>
+                        <option value="OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT">監聽並輸出</option>
+                    </select>
+                </div>
+            `;
+            el.appendChild(li);
+
+            sendRequest("GetInputVolume", { inputName: name }, `InitVol_${name}`);
+            sendRequest("GetInputMute", { inputName: name }, `InitMute_${name}`);
+            sendRequest("GetInputAudioBalance", { inputName: name }, `InitBal_${name}`);
+            sendRequest("GetInputAudioMonitorType", { inputName: name }, `InitMon_${name}`);
+        });
+    }
+
+    // 繪製音軌即時波形
+    function drawWaveform(inputName, currentVol) {
+        const canvas = document.getElementById(`canvas-${inputName}`);
+        if (!canvas) return;
+
+        const ctx = canvas.getContext('2d');
+        if (!audioHistories[inputName]) {
+            audioHistories[inputName] = new Array(40).fill(0);
+        }
+
+        const history = audioHistories[inputName];
+        history.push(currentVol);
+        history.shift();
+
+        const w = canvas.width;
+        const h = canvas.height;
+
+        ctx.clearRect(0, 0, w, h);
+
+        // 畫中心點線
+        ctx.beginPath();
+        ctx.strokeStyle = '#2b2b36';
+        ctx.moveTo(0, h / 2);
+        ctx.lineTo(w, h / 2);
+        ctx.stroke();
+
+        // 畫波形圖
+        ctx.beginPath();
+        ctx.strokeStyle = '#00bcd4';
+        ctx.lineWidth = 2;
+
+        const sliceWidth = w / (history.length - 1);
+        let x = 0;
+
+        for (let i = 0; i < history.length; i++) {
+            const amp = history[i] * (h / 2);
+            const y = (h / 2) + (i % 2 === 0 ? -amp : amp);
+
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+
+            x += sliceWidth;
+        }
+
+        ctx.stroke();
+    }
+
+    function updateVolumeUI(name, val) {
+        const el = document.getElementById(`vol-${name}`);
+        if (el) el.value = val;
+    }
+    function updateBalanceUI(name, val) {
+        const el = document.getElementById(`pan-${name}`);
+        if (el) el.value = val;
+    }
+    function updateMuteUI(name, isMuted) {
+        const btn = document.getElementById(`mute-btn-${name}`);
+        if (btn) {
+            btn.innerText = isMuted ? "已靜音" : "開啟中";
+            btn.className = `icon-btn ${isMuted ? 'muted' : 'visible'}`;
+        }
+    }
+    function updateMonitorUI(name, monType) {
+        const select = document.getElementById(`monitor-${name}`);
+        if (select) select.value = monType;
+    }
+
+    /* API 控制 */
+    function toggleStream() { sendRequest(isStreaming ? "StopStream" : "StartStream"); }
+    function toggleRecord() { sendRequest(isRecording ? "StopRecord" : "StartRecord"); }
+    function toggleMute(name) { sendRequest("ToggleInputMute", { inputName: name }); }
+    function setVolume(name, val) { sendRequest("SetInputVolume", { inputName: name, inputVolumeMul: parseFloat(val) }); }
+    function setPan(name, val) { sendRequest("SetInputAudioBalance", { inputName: name, inputAudioBalance: parseFloat(val) }); }
+    function setMonitor(name, val) { sendRequest("SetInputAudioMonitorType", { inputName: name, monitorType: val }); }
+
+    function switchTab(tabId, btn) {
+        const contents = document.querySelectorAll('.tab-content');
+        contents.forEach(el => el.classList.remove('active'));
+
+        const buttons = document.querySelectorAll('.tab-btn');
+        buttons.forEach(el => el.classList.remove('active'));
+
+        document.getElementById(tabId).classList.add('active');
+        btn.classList.add('active');
+    }
+</script>
+</body>
+</html>
