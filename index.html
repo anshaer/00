@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>OBS 手機控制台</title>
+    <title>MPCO</title>
     <style>
         :root {
             --bg-color: #121216;
@@ -25,8 +25,6 @@
         }
 
         .main-content { flex: 1; }
-
-        /* 收合式連線設定面板 */
         .collapsible-box {
             background: var(--card-bg); border-radius: 8px; margin-bottom: 12px;
             overflow: hidden; border: 1px solid #333;
@@ -63,7 +61,7 @@
             text-align: center; font-size: 0.9em;
         }
 
-        /* 掃描對話視窗 */
+
         #qr-modal {
             display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
             background: rgba(0,0,0,0.85); z-index: 9999; flex-direction: column;
@@ -75,7 +73,7 @@
             padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer;
         }
 
-        /* 頂部狀態列 */
+
         .status-header {
             background: var(--card-bg); padding: 12px; border-radius: 8px; margin-bottom: 12px;
             display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; text-align: center;
@@ -83,7 +81,7 @@
         .stat-item .label { font-size: 0.7em; color: var(--text-sub); }
         .stat-item .val { font-size: 0.95em; font-weight: bold; color: var(--accent-color); margin-top: 2px; }
 
-        /* 串流與錄影控制按鈕 */
+
         .action-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
         .btn-action {
             padding: 12px; border: none; border-radius: 8px; font-weight: bold;
@@ -94,7 +92,7 @@
         .btn-record { background: #1976d2; }
         .btn-record.active { background: var(--danger-color); }
 
-        /* 頁籤排版與刷新按鈕 */
+
         .tab-nav-container { display: flex; align-items: center; border-bottom: 2px solid #333; margin-bottom: 12px; }
         .tab-nav { display: flex; flex: 1; }
         .tab-btn {
@@ -111,11 +109,11 @@
         }
         .btn-refresh:active { background: var(--accent-color); color: #000; }
 
-        /* 內容分頁隔離 */
+ 
         .tab-content { display: none !important; }
         .tab-content.active { display: block !important; }
 
-        /* 列表與卡片 */
+
         ul { list-style: none; padding: 0; margin: 0; }
         .card-item {
             background: var(--card-bg); border-radius: 8px; padding: 12px; margin-bottom: 10px;
@@ -124,14 +122,14 @@
         .card-row { display: flex; justify-content: space-between; align-items: center; }
         .btn-group-right { display: flex; gap: 6px; align-items: center; }
 
-        /* 上傳圖片卡片 */
+
         .upload-card { border: 1px dashed var(--accent-color); background: #181820; }
         .upload-card input[type=text] {
             width: 100%; background: #2b2b36; border: 1px solid #444; color: #fff;
             padding: 8px; border-radius: 4px; outline: none;
         }
 
-        /* 尺寸與位置調整面板 */
+    
         .transform-box {
             display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
             background: #252530; padding: 8px; border-radius: 6px;
@@ -146,7 +144,7 @@
             padding: 4px 6px; border-radius: 4px; text-align: center; font-size: 0.9em;
         }
 
-        /* 場景與按鈕 */
+
         .scene-item {
             padding: 14px; background: var(--card-bg); border-radius: 8px; margin-bottom: 8px;
             font-size: 1em; cursor: pointer; border-left: 4px solid transparent;
@@ -176,15 +174,15 @@
             border-top: 1px solid #2b2b36; font-size: 0.8em; color: var(--text-sub);
         }
     </style>
-    <!-- Crypto-JS SHA-256 -->
+ 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
-    <!-- HTML5 QR Code 相機解碼庫 -->
+ 
     <script src="https://unpkg.com/html5-qrcode"></script>
 </head>
 <body>
 
 <div class="main-content">
-    <!-- 可收合連線設定區塊 -->
+
     <div class="collapsible-box">
         <div class="collapsible-header open" id="conn-header" onclick="toggleConnPanel()">
             <span>⚙ 連線與進階設定</span>
@@ -210,7 +208,7 @@
         </div>
     </div>
 
-    <!-- 頂部狀態 -->
+
     <div class="status-header">
         <div class="stat-item"><div class="label">連線狀態</div><div id="conn-status" class="val" style="color:var(--danger-color)">未連線</div></div>
         <div class="stat-item"><div class="label">輸出畫質</div><div id="video-res" class="val">--</div></div>
@@ -218,13 +216,13 @@
         <div class="stat-item"><div class="label">掉幀</div><div id="dropped-frames" class="val">0%</div></div>
     </div>
 
-    <!-- 串流/錄影 開關 -->
+
     <div class="action-btns">
         <button id="btn-toggle-stream" class="btn-action btn-stream" onclick="toggleStream()">開始串流</button>
         <button id="btn-toggle-record" class="btn-action btn-record" onclick="toggleRecord()">開始錄影</button>
     </div>
 
-    <!-- 頁籤導覽 + 刷新按鈕 -->
+   
     <div class="tab-nav-container">
         <div class="tab-nav">
             <button class="tab-btn active" onclick="switchTab('tab-scenes', this)">場景</button>
@@ -234,12 +232,12 @@
         <button class="btn-refresh" onclick="manualRefresh()">↻ 刷新</button>
     </div>
 
-    <!-- 分頁 1: 場景列表 -->
+   
     <div id="tab-scenes" class="tab-content active">
         <ul id="scenes-list"></ul>
     </div>
 
-    <!-- 分頁 2: 畫面來源 -->
+   
     <div id="tab-sources" class="tab-content">
         <div class="card-item upload-card">
             <strong>新增手機圖片來源</strong>
@@ -251,19 +249,19 @@
         <ul id="sources-list"></ul>
     </div>
 
-    <!-- 分頁 3: 音軌控制 -->
+   
     <div id="tab-audio" class="tab-content">
         <ul id="audio-list"></ul>
     </div>
 </div>
 
-<!-- QR Code 掃描彈窗 -->
+
 <div id="qr-modal">
     <div id="reader"></div>
     <button class="btn-close-scan" onclick="stopQRScan()">關閉相機</button>
 </div>
 
-<!-- 頁尾版權宣告 -->
+
 <footer class="footer">
     &copy; anshaer.com & 早.cc & Anaher
 </footer>
@@ -280,7 +278,7 @@
     let audioInputNames = new Set();
     let html5QrCode = null;
 
-    // 網頁載入時自動解析 URL 帶入的參數
+    
     window.onload = () => {
         const urlParams = new URLSearchParams(window.location.search);
         const ipParam = urlParams.get('ip');
@@ -291,7 +289,7 @@
         if (portParam) document.getElementById("server-port").value = portParam;
         if (passParam) document.getElementById("server-pass").value = passParam;
 
-        if (ipParam) connectOBS(); // 如果有 IP 參數就自動嘗試連線
+        if (ipParam) connectOBS(); 
     };
 
     /* QR Code 相機掃描邏輯 */
