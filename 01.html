@@ -160,12 +160,12 @@
         .slider-container input[type=range] { flex: 1; height: 24px; }
         select { background: #2b2b36; border: 1px solid #444; color: #fff; padding: 6px 8px; border-radius: 4px; }
 
-        /* 音軌波形 Canvas 畫布樣式 */
+        /* OBS 風格音量計 Canvas 樣式 */
         .audio-waveform-canvas {
             width: 100%;
-            height: 45px;
-            background: #141419;
-            border-radius: 6px;
+            height: 50px;
+            background: #181820;
+            border-radius: 4px;
             border: 1px solid #2b2b36;
             margin-top: 4px;
         }
@@ -269,9 +269,6 @@
     let sourceRatios = {};
     let audioInputNames = new Set();
     let html5QrCode = null;
-
-    // 儲存各音軌波形數據點歷史陣列
-    let audioHistories = {};
 
     window.onload = () => {
         const urlParams = new URLSearchParams(window.location.search);
@@ -409,17 +406,11 @@
         if (msg.op === 5) {
             const { eventType, eventData } = msg.d;
 
-            // 處理即時音效與柱狀波形事件
+            // 處理即時音效音量計事件
             if (eventType === "InputVolumeMeters") {
                 if (eventData.inputs && eventData.inputs.length > 0) {
                     eventData.inputs.forEach(input => {
-                        const inputName = input.inputName;
-                        if (input.inputLevelsMul && input.inputLevelsMul.length > 0) {
-                            const volData = input.inputLevelsMul[0]; // [0] 代表振幅 Magnitude (0~1.0)
-                            if (volData && volData[0] !== undefined) {
-                                drawWaveform(inputName, volData[0]);
-                            }
-                        }
+                        drawOBSVolumeMeter(input.inputName, input.inputLevelsMul);
                     });
                 }
             }
@@ -801,7 +792,7 @@
         }
     }
 
-    /* --- 3. 音軌控制與繪製紅色柱狀波形 --- */
+    /* --- 3. 音軌控制與 OBS 專業音量計 (VU/Peak Meter) 繪製 --- */
     function buildAudioListDOM(inputs) {
         const el = document.getElementById("audio-list");
         el.innerHTML = "";
@@ -819,10 +810,6 @@
 
         audioInputs.forEach(i => {
             const name = i.inputName;
-            // 初始化波形歷史數據陣列 (35根柱子)
-            if (!audioHistories[name]) {
-                audioHistories[name] = new Array(35).fill(0);
-            }
 
             const li = document.createElement("li");
             li.className = "card-item";
@@ -832,8 +819,8 @@
                     <button class="icon-btn" id="mute-btn-${name}" onclick="toggleMute('${name}')">開音</button>
                 </div>
 
-                <!-- 動態紅色音軌柱狀 Canvas -->
-                <canvas class="audio-waveform-canvas" id="canvas-${name}" width="300" height="45"></canvas>
+                <!-- OBS 風格專業音量計 Canvas -->
+                <canvas class="audio-waveform-canvas" id="canvas-${name}" width="320" height="50"></canvas>
 
                 <div class="slider-container">
                     <span>音量</span>
@@ -867,48 +854,123 @@
         });
     }
 
-    // 繪製對稱圓角紅色柱狀波形 (Audio Waveform Bars)
-    function drawWaveform(inputName, currentVol) {
+    // 將 0.0~1.0 的線性振幅轉換為以 -60dB 到 0dB 為主的水平繪圖比例 (0.0 ~ 1.0)
+    function mulToDbPos(mul) {
+        if (mul <= 0.00001) return 0;
+        let db = 20 * Math.log10(mul);
+        if (db < -60) db = -60;
+        if (db > 0) db = 0;
+        return (db + 60) / 60; // 歸一化至 0.0 ~ 1.0
+    }
+
+    // 繪製與 OBS 一模一樣的專業雙聲道音量計
+    function drawOBSVolumeMeter(inputName, inputLevelsMul) {
         const canvas = document.getElementById(`canvas-${inputName}`);
         if (!canvas) return;
 
         const ctx = canvas.getContext('2d');
-        if (!audioHistories[inputName]) {
-            audioHistories[inputName] = new Array(35).fill(0);
-        }
+        const W = canvas.width;
+        const H = canvas.height;
+        const barHeight = 10; // 單條音量棒高度
+        const gap = 3;        // 聲道間距
+        const meterAreaHeight = barHeight * 2 + gap; // 雙聲道總高度 (23px)
+        const scaleHeight = 16; // 底部刻度數字區域高度
 
-        const history = audioHistories[inputName];
-        history.push(currentVol);
-        history.shift();
+        ctx.clearRect(0, 0, W, H);
 
-        const w = canvas.width;
-        const h = canvas.height;
-        const centerY = h / 2;
+        // 聲道資料 (若單聲道則複製為雙聲道)
+        const channelLevels = (inputLevelsMul && inputLevelsMul.length > 0) ? inputLevelsMul : [[0,0,0], [0,0,0]];
+        if (channelLevels.length === 1) channelLevels.push(channelLevels[0]);
 
-        ctx.clearRect(0, 0, w, h);
+        // 1. 繪製兩條聲道音量計 (L / R)
+        for (let ch = 0; ch < 2; ch++) {
+            const y = ch * (barHeight + gap) + 4;
+            const levels = channelLevels[ch] || [0, 0, 0];
+            const magPos = mulToDbPos(levels[0]);   // 當前實體音量 (Magnitude)
+            const peakPos = mulToDbPos(levels[1]);  // 峰值 (Peak)
 
-        const barCount = history.length;
-        const gap = 3; // 柱體間距
-        const barWidth = (w - (barCount - 1) * gap) / barCount;
+            // (A) 底色背景暗軌 (暗綠、暗黃、暗紅)
+            const split20 = (40 / 60) * W; // -20 dB 位置 (綠/黃分界)
+            const split9 = (51 / 60) * W;  // -9 dB 位置 (黃/紅分界)
 
-        for (let i = 0; i < barCount; i++) {
-            const minHeight = 3; // 最少保留的高度
-            const barHeight = Math.max(minHeight, history[i] * (h - 8));
-            
-            const x = i * (barWidth + gap);
-            const y = centerY - (barHeight / 2);
+            // 暗綠
+            ctx.fillStyle = '#083310';
+            ctx.fillRect(0, y, Math.min(W, split20), barHeight);
+            // 暗黃
+            ctx.fillStyle = '#3f3803';
+            ctx.fillRect(split20, y, Math.min(W - split20, split9 - split20), barHeight);
+            // 暗紅
+            ctx.fillStyle = '#42080a';
+            ctx.fillRect(split9, y, W - split9, barHeight);
 
-            // 紅色波形 (採用 CSS 主題中的 var(--danger-color))
-            ctx.fillStyle = '#ff5252';
-
-            ctx.beginPath();
-            if (ctx.roundRect) {
-                ctx.roundRect(x, y, barWidth, barHeight, barWidth / 2);
-            } else {
-                ctx.rect(x, y, barWidth, barHeight);
+            // (B) 即時跳動音量條 (亮綠、亮黃、亮紅)
+            const activeWidth = magPos * W;
+            if (activeWidth > 0) {
+                // 亮綠 (-60dB ~ -20dB)
+                if (activeWidth > 0) {
+                    ctx.fillStyle = '#26d042';
+                    ctx.fillRect(0, y, Math.min(activeWidth, split20), barHeight);
+                }
+                // 亮黃 (-20dB ~ -9dB)
+                if (activeWidth > split20) {
+                    ctx.fillStyle = '#e5c100';
+                    ctx.fillRect(split20, y, Math.min(activeWidth - split20, split9 - split20), barHeight);
+                }
+                // 亮紅 (-9dB ~ 0dB)
+                if (activeWidth > split9) {
+                    ctx.fillStyle = '#ff2a2a';
+                    ctx.fillRect(split9, y, activeWidth - split9, barHeight);
+                }
             }
-            ctx.fill();
+
+            // (C) 峰值點 (Peak Hold Line)
+            const peakX = peakPos * W;
+            if (peakX > 0) {
+                if (peakPos <= (40 / 60)) ctx.fillStyle = '#39ff5a';
+                else if (peakPos <= (51 / 60)) ctx.fillStyle = '#ffff40';
+                else ctx.fillStyle = '#ff4a4a';
+
+                ctx.fillRect(Math.max(0, peakX - 3), y, 3, barHeight);
+            }
         }
+
+        // 2. 繪製底部 OBS 刻度尺 (dB Scale)
+        const scaleY = meterAreaHeight + 6;
+        ctx.fillStyle = '#888899';
+        ctx.font = '9px monospace';
+        ctx.textAlign = 'center';
+
+        const dbMarks = [
+            { db: -60, text: '-60' },
+            { db: -54, text: '-54' },
+            { db: -48, text: '-48' },
+            { db: -42, text: '-42' },
+            { db: -36, text: '-36' },
+            { db: -30, text: '-30' },
+            { db: -24, text: '-24' },
+            { db: -18, text: '-18' },
+            { db: -12, text: '-12' },
+            { db: -6,  text: '-6' },
+            { db: 0,   text: '0' }
+        ];
+
+        ctx.strokeStyle = '#444455';
+        ctx.lineWidth = 1;
+
+        dbMarks.forEach(m => {
+            const posX = ((m.db + 60) / 60) * W;
+            // 畫刻度小短線
+            ctx.beginPath();
+            ctx.moveTo(posX, scaleY - 3);
+            ctx.lineTo(posX, scaleY);
+            ctx.stroke();
+
+            // 畫刻度數字文字
+            let alignX = posX;
+            if (m.db === -60) alignX = posX + 6;
+            if (m.db === 0) alignX = posX - 3;
+            ctx.fillText(m.text, alignX, scaleY + 10);
+        });
     }
 
     function updateVolumeUI(name, val) {
