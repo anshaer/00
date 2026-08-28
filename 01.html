@@ -160,7 +160,7 @@
         .slider-container input[type=range] { flex: 1; height: 24px; }
         select { background: #2b2b36; border: 1px solid #444; color: #fff; padding: 6px 8px; border-radius: 4px; }
 
-        /* 新增：音軌波形 Canvas 樣式 */
+        /* 音軌波形 Canvas 畫布樣式 */
         .audio-waveform-canvas {
             width: 100%;
             height: 45px;
@@ -409,7 +409,7 @@
         if (msg.op === 5) {
             const { eventType, eventData } = msg.d;
 
-            // 新增：處理即時音速與波形事件
+            // 處理即時音效與柱狀波形事件
             if (eventType === "InputVolumeMeters") {
                 if (eventData.inputs && eventData.inputs.length > 0) {
                     eventData.inputs.forEach(input => {
@@ -801,7 +801,7 @@
         }
     }
 
-    /* --- 3. 音軌控制與繪製波形 --- */
+    /* --- 3. 音軌控制與繪製紅色柱狀波形 --- */
     function buildAudioListDOM(inputs) {
         const el = document.getElementById("audio-list");
         el.innerHTML = "";
@@ -819,9 +819,9 @@
 
         audioInputs.forEach(i => {
             const name = i.inputName;
-            // 初始化波形歷史數據陣列
+            // 初始化波形歷史數據陣列 (35根柱子)
             if (!audioHistories[name]) {
-                audioHistories[name] = new Array(40).fill(0);
+                audioHistories[name] = new Array(35).fill(0);
             }
 
             const li = document.createElement("li");
@@ -832,7 +832,7 @@
                     <button class="icon-btn" id="mute-btn-${name}" onclick="toggleMute('${name}')">開音</button>
                 </div>
 
-                <!-- 動態音軌波形 Canvas 畫布 -->
+                <!-- 動態紅色音軌柱狀 Canvas -->
                 <canvas class="audio-waveform-canvas" id="canvas-${name}" width="300" height="45"></canvas>
 
                 <div class="slider-container">
@@ -867,14 +867,14 @@
         });
     }
 
-    // 繪製音軌即時波形
+    // 繪製對稱圓角紅色柱狀波形 (Audio Waveform Bars)
     function drawWaveform(inputName, currentVol) {
         const canvas = document.getElementById(`canvas-${inputName}`);
         if (!canvas) return;
 
         const ctx = canvas.getContext('2d');
         if (!audioHistories[inputName]) {
-            audioHistories[inputName] = new Array(40).fill(0);
+            audioHistories[inputName] = new Array(35).fill(0);
         }
 
         const history = audioHistories[inputName];
@@ -883,35 +883,32 @@
 
         const w = canvas.width;
         const h = canvas.height;
+        const centerY = h / 2;
 
         ctx.clearRect(0, 0, w, h);
 
-        // 畫中心點線
-        ctx.beginPath();
-        ctx.strokeStyle = '#2b2b36';
-        ctx.moveTo(0, h / 2);
-        ctx.lineTo(w, h / 2);
-        ctx.stroke();
+        const barCount = history.length;
+        const gap = 3; // 柱體間距
+        const barWidth = (w - (barCount - 1) * gap) / barCount;
 
-        // 畫波形圖
-        ctx.beginPath();
-        ctx.strokeStyle = '#00bcd4';
-        ctx.lineWidth = 2;
+        for (let i = 0; i < barCount; i++) {
+            const minHeight = 3; // 最少保留的高度
+            const barHeight = Math.max(minHeight, history[i] * (h - 8));
+            
+            const x = i * (barWidth + gap);
+            const y = centerY - (barHeight / 2);
 
-        const sliceWidth = w / (history.length - 1);
-        let x = 0;
+            // 紅色波形 (採用 CSS 主題中的 var(--danger-color))
+            ctx.fillStyle = '#ff5252';
 
-        for (let i = 0; i < history.length; i++) {
-            const amp = history[i] * (h / 2);
-            const y = (h / 2) + (i % 2 === 0 ? -amp : amp);
-
-            if (i === 0) ctx.moveTo(x, y);
-            else ctx.lineTo(x, y);
-
-            x += sliceWidth;
+            ctx.beginPath();
+            if (ctx.roundRect) {
+                ctx.roundRect(x, y, barWidth, barHeight, barWidth / 2);
+            } else {
+                ctx.rect(x, y, barWidth, barHeight);
+            }
+            ctx.fill();
         }
-
-        ctx.stroke();
     }
 
     function updateVolumeUI(name, val) {
