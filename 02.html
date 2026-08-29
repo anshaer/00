@@ -6594,10 +6594,18 @@ Defaulting to \`null\`.`}an(UC,"getInvalidValueError");var xb=NC,gb=PC;var gc={}
     let F=n.current??document.createElement("canvas");n.current=F;
     let re=Math.min(1,1280/k.videoWidth);F.width=Math.max(1,Math.round(k.videoWidth*re));F.height=Math.max(1,Math.round(k.videoHeight*re));
     let Ct=F.getContext("2d",{willReadFrequently:!0});if(!Ct)return[];Ct.drawImage(k,0,0,F.width,F.height);
-    let layouts=[[1,1],[2,1],[2,2],[3,2],[3,3],[4,3],[4,4]],cycle=((F.__gridCycle??-1)+1)%layouts.length;F.__gridCycle=cycle;
+    let rgba=Ct.getImageData(0,0,F.width,F.height).data,gray=new Uint8ClampedArray(F.width*F.height);
+    for(let sourceOffset=0,targetOffset=0;sourceOffset<rgba.length;sourceOffset+=4,targetOffset+=1){
+      gray[targetOffset]=(306*rgba[sourceOffset]+601*rgba[sourceOffset+1]+117*rgba[sourceOffset+2]+512)>>10
+    }
+    let fullSource=new X0(gray,F.width,F.height),layouts=[[1,1],[2,1],[2,2],[3,2],[3,3],[4,3],[4,4]],cycle=((F.__gridCycle??-1)+1)%layouts.length;F.__gridCycle=cycle;
     let [columns,rows]=layouts[cycle],cellSize=Math.min(F.width/columns,F.height/rows),gridWidth=cellSize*columns,gridHeight=cellSize*rows;
     let originX=(F.width-gridWidth)/2,originY=(F.height-gridHeight)/2,overlap=Math.max(2,cellSize*.055);
     let regions=[{x:0,y:0,width:F.width,height:F.height}];
+    for(let scale of [.9,.8,.7]){
+      let width=Math.max(1,Math.round(F.width*scale)),height=Math.max(1,Math.round(F.height*scale));
+      regions.push({x:Math.round((F.width-width)/2),y:Math.round((F.height-height)/2),width,height})
+    }
     if(columns>1||rows>1)for(let row=0;row<rows;row+=1)for(let column=0;column<columns;column+=1){
       let x=Math.max(0,Math.floor(originX+column*cellSize-overlap)),y=Math.max(0,Math.floor(originY+row*cellSize-overlap));
       let right=Math.min(F.width,Math.ceil(originX+(column+1)*cellSize+overlap)),bottom=Math.min(F.height,Math.ceil(originY+(row+1)*cellSize+overlap));
@@ -6605,7 +6613,7 @@ Defaulting to \`null\`.`}an(UC,"getInvalidValueError");var xb=NC,gb=PC;var gc={}
     }
     let results=new Set;
     for(let region of regions){
-      let pixels=Ct.getImageData(region.x,region.y,region.width,region.height),source=new X0(pixels.data,region.width,region.height),hints=new Map;
+      let source=fullSource.crop(region.x,region.y,region.width,region.height),hints=new Map;
       hints.set(ae.POSSIBLE_FORMATS,[B.QR_CODE]);hints.set(ae.TRY_HARDER,!0);
       for(let luminance of [source,source.invert()]){
         let bitmap=new hl(new ml(luminance)),reader=new El;reader.setHints(hints);
