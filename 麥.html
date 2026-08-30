@@ -158,7 +158,7 @@ audio{width:100%;margin-top:10px}
   </div>
 
   <div class="tabs">
-    <button class="tab active" data-tab="send">傳送</button>
+    <button class="tab active" data-tab="send">發起</button>
     <button class="tab" data-tab="recv">接收</button>
   </div>
 
@@ -166,7 +166,7 @@ audio{width:100%;margin-top:10px}
   <section id="send" class="panel active">
 
     <div class="card">
-      <div class="sectionTitle">麥克風設定</div>
+      <div class="sectionTitle">發起端麥克風</div>
       <label class="field">麥克風</label>
       <select id="micSelect"></select>
 
@@ -181,12 +181,30 @@ audio{width:100%;margin-top:10px}
         <div class="meter"><div id="sendMeter" class="bar"></div></div>
       </div>
       <div id="sendInfo" class="audioInfo">尚未啟動麥克風</div>
+      <div class="sectionTitle" style="margin-top:16px">自己的麥克風調整</div>
+      <div class="small" style="margin-bottom:10px">只會處理發起端送出去的麥克風，不會修改收到的對方聲音。</div>
+      <div class="row">
+        <label class="field" style="flex:1;min-width:140px">輸入增益
+          <input id="sendGain" type="range" min="0" max="2" step="0.05" value="1" style="width:100%">
+        </label>
+        <label class="field" style="flex:1;min-width:140px">人工延遲
+          <input id="sendDelay" type="range" min="0" max="1000" step="10" value="0" style="width:100%">
+          <span id="sendDelayText">0 ms</span>
+        </label>
+      </div>
+      <div class="row">
+        <button id="sendNoise" class="success">去雜音 ON</button>
+        <button id="sendHPF" class="success">低頻切除 ON</button>
+        <button id="sendComp" class="success">壓縮器 ON</button>
+        <button id="sendEcho" class="ghost">回聲 OFF</button>
+      </div>
+
     </div>
 
     <div class="card">
       <div class="sectionTitle">QR 配對</div>
       <div class="small" style="margin-bottom:12px">
-        順序：① 啟動麥克風後會自動產生 Offer QR → ② 讓接收端掃描 →
+        順序：① 啟動發起端麥克風後會自動產生 Offer QR → ② 讓接收端掃描 →
         ③ 傳送端開相機掃描接收端的 Answer QR，或讀取 Answer QR ZIP →
         ④ 讀取完成後會自動套用並開始連線傳輸。
       </div>
@@ -228,6 +246,39 @@ audio{width:100%;margin-top:10px}
 
   <!-- 接收 -->
   <section id="recv" class="panel">
+
+    <div class="card">
+      <div class="sectionTitle">接收端麥克風</div>
+      <div class="small" style="margin-bottom:10px">有麥克風時可直接雙向對話。接收端預設靜音；解除靜音後才會把自己的聲音傳回發起端。</div>
+      <label class="field">麥克風</label>
+      <select id="recvMicSelect"></select>
+      <div class="row" style="margin-top:10px">
+        <button id="recvMicStart" class="primary">啟動接收端麥克風</button>
+        <button id="recvMicMute" class="warn" disabled>解除靜音</button>
+      </div>
+      <div style="margin-top:14px">
+        <label class="field">自己的麥克風音量</label>
+        <div class="meter"><div id="recvSendMeter" class="bar"></div></div>
+      </div>
+      <div class="sectionTitle" style="margin-top:16px">自己的麥克風調整</div>
+      <div class="small" style="margin-bottom:10px">只處理接收端送回去的麥克風，不影響收到的發起端語音。</div>
+      <div class="row">
+        <label class="field" style="flex:1;min-width:140px">輸入增益
+          <input id="recvGain" type="range" min="0" max="2" step="0.05" value="1" style="width:100%">
+        </label>
+        <label class="field" style="flex:1;min-width:140px">人工延遲
+          <input id="recvDelay" type="range" min="0" max="1000" step="10" value="0" style="width:100%">
+          <span id="recvDelayText">0 ms</span>
+        </label>
+      </div>
+      <div class="row">
+        <button id="recvNoise" class="success">去雜音 ON</button>
+        <button id="recvHPF" class="success">低頻切除 ON</button>
+        <button id="recvComp" class="success">壓縮器 ON</button>
+        <button id="recvEcho" class="ghost">回聲 OFF</button>
+      </div>
+      <div id="recvMicInfo" class="audioInfo">接收端麥克風尚未啟動</div>
+    </div>
 
     <div class="card">
       <div class="sectionTitle">語音接收</div>
@@ -318,6 +369,15 @@ const $ = id => document.getElementById(id);
 let activeTab = 'send';
 let localStream = null;
 let remoteStream = null;
+let sendRawStream = null;
+let recvLocalRawStream = null;
+let recvLocalProcessedStream = null;
+let sendAudioCtx = null;
+let recvLocalAudioCtx = null;
+let sendFx = null;
+let recvFx = null;
+let recvLocalMeterCtx = null;
+let recvLocalRAF = 0;
 let sendPC = null;
 let recvPC = null;
 
@@ -374,13 +434,19 @@ async function listMics(){
   try{
     const devs = await navigator.mediaDevices.enumerateDevices();
     const mics = devs.filter(d=>d.kind==='audioinput');
-    $('micSelect').innerHTML = '';
-    mics.forEach((d,i)=>{
-      const o = document.createElement('option');
-      o.value = d.deviceId;
-      o.textContent = d.label || `麥克風 ${i+1}`;
-      $('micSelect').appendChild(o);
-    });
+    for(const id of ['micSelect','recvMicSelect']){
+      const sel=$(id);
+      if(!sel) continue;
+      const old=sel.value;
+      sel.innerHTML='';
+      mics.forEach((d,i)=>{
+        const o=document.createElement('option');
+        o.value=d.deviceId;
+        o.textContent=d.label||`麥克風 ${i+1}`;
+        sel.appendChild(o);
+      });
+      if([...sel.options].some(o=>o.value===old)) sel.value=old;
+    }
   }catch(_){}
 }
 listMics();
@@ -429,7 +495,7 @@ function meterFromStream(stream, barId, kind){
     }
     $(barId).style.width = Math.min(100, Math.sqrt(sum/data.length)*260) + '%';
     const id = requestAnimationFrame(loop);
-    if(kind==='send') sendRAF=id; else recvRAF=id;
+    if(kind==='send') sendRAF=id; else if(kind==='recvLocal') recvLocalRAF=id; else recvRAF=id;
   }
   loop();
   return ctx;
@@ -582,6 +648,80 @@ async function downloadQRZip(kind){
   }
 }
 
+
+function buildMicProcessor(rawStream, side){
+  const Ctx=window.AudioContext||window.webkitAudioContext;
+  const ctx=new Ctx();
+  const src=ctx.createMediaStreamSource(rawStream);
+  const gain=ctx.createGain();
+  const hpf=ctx.createBiquadFilter();
+  hpf.type='highpass'; hpf.frequency.value=80;
+  const comp=ctx.createDynamicsCompressor();
+  comp.threshold.value=-24; comp.knee.value=20; comp.ratio.value=4; comp.attack.value=.005; comp.release.value=.12;
+  const delay=ctx.createDelay(2.0);
+  const dry=ctx.createGain();
+  const echoDelay=ctx.createDelay(1.5);
+  const echoGain=ctx.createGain();
+  const sum=ctx.createGain();
+  const dest=ctx.createMediaStreamDestination();
+
+  gain.gain.value=1;
+  delay.delayTime.value=0;
+  dry.gain.value=1;
+  echoDelay.delayTime.value=.24;
+  echoGain.gain.value=0;
+
+  src.connect(gain);
+  gain.connect(hpf);
+  hpf.connect(comp);
+  comp.connect(delay);
+  delay.connect(dry);
+  dry.connect(sum);
+  delay.connect(echoDelay);
+  echoDelay.connect(echoGain);
+  echoGain.connect(sum);
+  echoGain.connect(echoDelay);
+  sum.connect(dest);
+
+  return {
+    ctx,src,gain,hpf,comp,delay,dry,echoDelay,echoGain,sum,dest,
+    hpfOn:true,compOn:true,echoOn:false
+  };
+}
+
+function applyFxUi(side, fx){
+  const gain=$(`${side}Gain`);
+  const delay=$(`${side}Delay`);
+  const delayText=$(`${side}DelayText`);
+  const hpfBtn=$(`${side}HPF`);
+  const compBtn=$(`${side}Comp`);
+  const echoBtn=$(`${side}Echo`);
+
+  gain.oninput=()=>{ fx.gain.gain.value=+gain.value; };
+  delay.oninput=()=>{
+    fx.delay.delayTime.value=+delay.value/1000;
+    delayText.textContent=`${delay.value} ms`;
+  };
+  hpfBtn.onclick=()=>{
+    fx.hpfOn=!fx.hpfOn;
+    fx.hpf.frequency.value=fx.hpfOn?80:10;
+    hpfBtn.textContent=`低頻切除 ${fx.hpfOn?'ON':'OFF'}`;
+    hpfBtn.className=fx.hpfOn?'success':'ghost';
+  };
+  compBtn.onclick=()=>{
+    fx.compOn=!fx.compOn;
+    fx.comp.ratio.value=fx.compOn?4:1;
+    compBtn.textContent=`壓縮器 ${fx.compOn?'ON':'OFF'}`;
+    compBtn.className=fx.compOn?'success':'ghost';
+  };
+  echoBtn.onclick=()=>{
+    fx.echoOn=!fx.echoOn;
+    fx.echoGain.gain.value=fx.echoOn?.28:0;
+    echoBtn.textContent=`回聲 ${fx.echoOn?'ON':'OFF'}`;
+    echoBtn.className=fx.echoOn?'success':'ghost';
+  };
+}
+
 async function createOfferAuto(){
   if(!localStream) return;
 
@@ -593,6 +733,30 @@ async function createOfferAuto(){
     sendPC = new RTCPeerConnection(pcConfig());
 
     localStream.getTracks().forEach(t=>sendPC.addTrack(t,localStream));
+    // Allow bidirectional audio on the same WebRTC connection.
+    const audioSender=sendPC.getSenders().find(s=>s.track?.kind==='audio');
+    if(audioSender){
+      const tr=sendPC.getTransceivers().find(t=>t.sender===audioSender);
+      if(tr) tr.direction='sendrecv';
+    }
+
+    
+    sendPC.ontrack = async e=>{
+      const backStream=e.streams[0]||new MediaStream([e.track]);
+      let audio=$('sendRemoteAudio');
+      if(!audio){
+        audio=document.createElement('audio');
+        audio.id='sendRemoteAudio';
+        audio.playsInline=true;
+        audio.autoplay=true;
+        audio.style.display='none';
+        document.body.appendChild(audio);
+      }
+      audio.srcObject=backStream;
+      audio.muted=false;
+      audio.volume=1;
+      try{await audio.play()}catch(_){}
+    };
 
     sendPC.onconnectionstatechange = ()=>{
       const s = sendPC.connectionState;
@@ -639,7 +803,7 @@ $('startMic').addEventListener('click', async()=>{
     if(localStream) localStream.getTracks().forEach(t=>t.stop());
 
     const id = $('micSelect').value;
-    localStream = await navigator.mediaDevices.getUserMedia({
+    sendRawStream = await navigator.mediaDevices.getUserMedia({
       audio:{
         deviceId:id?{exact:id}:undefined,
         echoCancellation:true,
@@ -649,6 +813,12 @@ $('startMic').addEventListener('click', async()=>{
     });
 
     await listMics();
+
+    if(sendAudioCtx) try{await sendAudioCtx.close()}catch(_){}
+    sendFx=buildMicProcessor(sendRawStream,'send');
+    sendAudioCtx=sendFx.ctx;
+    applyFxUi('send',sendFx);
+    localStream=sendFx.dest.stream;
 
     if(sendMeterCtx) sendMeterCtx.close();
     sendMeterCtx = meterFromStream(localStream,'sendMeter','send');
@@ -679,7 +849,11 @@ $('stopSend').addEventListener('click', async()=>{
   if(sendPC) sendPC.close();
   sendPC = null;
   if(localStream) localStream.getTracks().forEach(t=>t.stop());
+  if(sendRawStream) sendRawStream.getTracks().forEach(t=>t.stop());
+  sendRawStream=null;
   localStream = null;
+  if(sendAudioCtx) try{await sendAudioCtx.close()}catch(_){}
+  sendAudioCtx=null; sendFx=null;
   if(sendMeterCtx) sendMeterCtx.close();
   sendMeterCtx = null;
   cancelAnimationFrame(sendRAF);
@@ -800,6 +974,10 @@ async function buildAnswerQR(){
     if(recvPC) recvPC.close();
     recvPC = new RTCPeerConnection(pcConfig());
 
+    if(recvLocalProcessedStream){
+      recvLocalProcessedStream.getAudioTracks().forEach(t=>recvPC.addTrack(t,recvLocalProcessedStream));
+    }
+
     recvPC.ontrack = async e=>{
       remoteStream = e.streams[0] || new MediaStream([e.track]);
 
@@ -889,6 +1067,58 @@ $('togglePlay').addEventListener('click', async()=>{
     $('togglePlay').textContent='播放';
     setRecvInfo('語音已暫停');
   }
+});
+
+
+$('recvMicStart').addEventListener('click', async()=>{
+  try{
+    const id=$('recvMicSelect').value;
+    if(recvLocalRawStream) recvLocalRawStream.getTracks().forEach(t=>t.stop());
+    recvLocalRawStream=await navigator.mediaDevices.getUserMedia({
+      audio:{
+        deviceId:id?{exact:id}:undefined,
+        echoCancellation:true,
+        noiseSuppression:true,
+        autoGainControl:true
+      }
+    });
+    await listMics();
+
+    if(recvLocalAudioCtx) try{await recvLocalAudioCtx.close()}catch(_){}
+    recvFx=buildMicProcessor(recvLocalRawStream,'recv');
+    recvLocalAudioCtx=recvFx.ctx;
+    applyFxUi('recv',recvFx);
+    recvLocalProcessedStream=recvFx.dest.stream;
+
+    // Receiver microphone defaults to muted.
+    recvLocalProcessedStream.getAudioTracks().forEach(t=>t.enabled=false);
+
+    if(recvLocalMeterCtx) try{await recvLocalMeterCtx.close()}catch(_){}
+    recvLocalMeterCtx=meterFromStream(recvLocalProcessedStream,'recvSendMeter','recvLocal');
+
+    $('recvMicMute').disabled=false;
+    $('recvMicMute').textContent='解除靜音';
+    $('recvMicInfo').textContent='接收端麥克風已啟動，目前靜音';
+
+    // If peer connection already exists, add or replace outgoing receiver mic track.
+    if(recvPC){
+      const track=recvLocalProcessedStream.getAudioTracks()[0];
+      const sender=recvPC.getSenders().find(s=>s.track?.kind==='audio');
+      if(sender) await sender.replaceTrack(track);
+      else recvPC.addTrack(track,recvLocalProcessedStream);
+    }
+  }catch(e){
+    $('recvMicInfo').textContent='接收端麥克風啟動失敗：'+(e.message||e);
+  }
+});
+
+$('recvMicMute').addEventListener('click', ()=>{
+  if(!recvLocalProcessedStream) return;
+  const track=recvLocalProcessedStream.getAudioTracks()[0];
+  if(!track) return;
+  track.enabled=!track.enabled;
+  $('recvMicMute').textContent=track.enabled?'靜音':'解除靜音';
+  $('recvMicInfo').textContent=track.enabled?'接收端麥克風正在傳回發起端':'接收端麥克風已靜音';
 });
 
 $('testSpeaker').addEventListener('click', async()=>{
@@ -1118,6 +1348,27 @@ $('scanOfferQR').addEventListener('click', async()=>{
     $('recvScanInfo').textContent='相機啟動失敗：'+(e.message||e);
   }
 });
+
+
+for(const side of ['send','recv']){
+  const b=$(`${side}Noise`);
+  if(b){
+    b.onclick=()=>{
+      const on=!b.dataset.off;
+      if(on){
+        b.dataset.off='1';
+        b.textContent='去雜音 OFF';
+        b.className='ghost';
+      }else{
+        delete b.dataset.off;
+        b.textContent='去雜音 ON';
+        b.className='success';
+      }
+      const info=side==='send'?$('sendInfo'):$('recvMicInfo');
+      info.textContent='去雜音切換會在下次重新啟動麥克風時套用。';
+    };
+  }
+}
 
 window.addEventListener('beforeunload', ()=>{
   clearInterval(offerTimer);
