@@ -4,8 +4,212 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>網頁音訊傳輸 QR版</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js">
+let scanStream=null,scanRAF=0,scanExpected=null,scanBusy=false;
+
+async function stopScanner(){
+  cancelAnimationFrame(scanRAF);
+  scanRAF=0;
+  scanBusy=false;
+  if(scanStream){
+    scanStream.getTracks().forEach(t=>t.stop());
+    scanStream=null;
+  }
+  $('scannerVideo').srcObject=null;
+  $('scannerPanel').classList.add('hidden');
+}
+
+async function startScanner(expected){
+  try{
+    await stopScanner();
+    scanExpected=expected;
+    $('scannerPanel').classList.remove('hidden');
+    $('scannerTitle').textContent=expected==='offer'?'掃描 Offer QR':'掃描 Answer QR';
+    $('scannerHint').textContent='正在開啟相機…';
+
+    scanStream=await navigator.mediaDevices.getUserMedia({
+      video:{
+        facingMode:{ideal:'environment'},
+        width:{ideal:1280},
+        height:{ideal:720}
+      },
+      audio:false
+    });
+
+    const v=$('scannerVideo');
+    v.srcObject=scanStream;
+    await v.play();
+    $('scannerHint').textContent='請將 QR Code 放到畫面中央';
+
+    let detector=null;
+    if('BarcodeDetector' in window){
+      try{
+        const supported=await BarcodeDetector.getSupportedFormats();
+        if(supported.includes('qr_code')) detector=new BarcodeDetector({formats:['qr_code']});
+      }catch(_){}
+    }
+
+    const canvas=document.createElement('canvas');
+    const ctx=canvas.getContext('2d',{willReadFrequently:true});
+
+    async function loop(){
+      if(!scanStream || scanBusy) return;
+      try{
+        let data=null;
+
+        if(detector){
+          const codes=await detector.detect(v);
+          if(codes && codes.length) data=codes[0].rawValue;
+        }else if(typeof jsQR==='function' && v.readyState>=2){
+          const max=1000;
+          const scale=Math.min(1,max/Math.max(v.videoWidth||1,v.videoHeight||1));
+          canvas.width=Math.max(1,Math.round((v.videoWidth||640)*scale));
+          canvas.height=Math.max(1,Math.round((v.videoHeight||480)*scale));
+          ctx.drawImage(v,0,0,canvas.width,canvas.height);
+          const im=ctx.getImageData(0,0,canvas.width,canvas.height);
+          const code=jsQR(im.data,im.width,im.height,{inversionAttempts:'attemptBoth'});
+          if(code) data=code.data;
+        }
+
+        if(data){
+          scanBusy=true;
+          const statusId=scanExpected==='offer'?'offerReadStatus':'answerReadStatus';
+          const targetId=scanExpected==='offer'?'offerIn':'answerIn';
+          try{
+            const complete=await acceptQR(data,scanExpected,statusId,targetId);
+            if(complete){
+              $('scannerHint').textContent='讀取完成';
+              if(scanExpected==='offer') $('createAnswer').disabled=false;
+              else $('applyAnswer').disabled=false;
+              setTimeout(stopScanner,350);
+              return;
+            }else{
+              $('scannerHint').textContent='已讀取這一張；若有多張 QR，請掃下一張';
+              scanBusy=false;
+            }
+          }catch(err){
+            $('scannerHint').textContent='讀取失敗：'+err.message;
+            setTimeout(()=>{scanBusy=false},700);
+          }
+        }
+      }catch(_){}
+      scanRAF=requestAnimationFrame(loop);
+    }
+    scanRAF=requestAnimationFrame(loop);
+  }catch(e){
+    $('scannerPanel').classList.remove('hidden');
+    $('scannerHint').textContent=`相機啟動失敗：${e.name||''} ${e.message||e}`;
+  }
+}
+
+$('scanOfferQR').onclick=()=>startScanner('offer');
+$('scanAnswerQR').onclick=()=>startScanner('answer');
+$('closeScanner').onclick=stopScanner;
+
+</script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js">
+let scanStream=null,scanRAF=0,scanExpected=null,scanBusy=false;
+
+async function stopScanner(){
+  cancelAnimationFrame(scanRAF);
+  scanRAF=0;
+  scanBusy=false;
+  if(scanStream){
+    scanStream.getTracks().forEach(t=>t.stop());
+    scanStream=null;
+  }
+  $('scannerVideo').srcObject=null;
+  $('scannerPanel').classList.add('hidden');
+}
+
+async function startScanner(expected){
+  try{
+    await stopScanner();
+    scanExpected=expected;
+    $('scannerPanel').classList.remove('hidden');
+    $('scannerTitle').textContent=expected==='offer'?'掃描 Offer QR':'掃描 Answer QR';
+    $('scannerHint').textContent='正在開啟相機…';
+
+    scanStream=await navigator.mediaDevices.getUserMedia({
+      video:{
+        facingMode:{ideal:'environment'},
+        width:{ideal:1280},
+        height:{ideal:720}
+      },
+      audio:false
+    });
+
+    const v=$('scannerVideo');
+    v.srcObject=scanStream;
+    await v.play();
+    $('scannerHint').textContent='請將 QR Code 放到畫面中央';
+
+    let detector=null;
+    if('BarcodeDetector' in window){
+      try{
+        const supported=await BarcodeDetector.getSupportedFormats();
+        if(supported.includes('qr_code')) detector=new BarcodeDetector({formats:['qr_code']});
+      }catch(_){}
+    }
+
+    const canvas=document.createElement('canvas');
+    const ctx=canvas.getContext('2d',{willReadFrequently:true});
+
+    async function loop(){
+      if(!scanStream || scanBusy) return;
+      try{
+        let data=null;
+
+        if(detector){
+          const codes=await detector.detect(v);
+          if(codes && codes.length) data=codes[0].rawValue;
+        }else if(typeof jsQR==='function' && v.readyState>=2){
+          const max=1000;
+          const scale=Math.min(1,max/Math.max(v.videoWidth||1,v.videoHeight||1));
+          canvas.width=Math.max(1,Math.round((v.videoWidth||640)*scale));
+          canvas.height=Math.max(1,Math.round((v.videoHeight||480)*scale));
+          ctx.drawImage(v,0,0,canvas.width,canvas.height);
+          const im=ctx.getImageData(0,0,canvas.width,canvas.height);
+          const code=jsQR(im.data,im.width,im.height,{inversionAttempts:'attemptBoth'});
+          if(code) data=code.data;
+        }
+
+        if(data){
+          scanBusy=true;
+          const statusId=scanExpected==='offer'?'offerReadStatus':'answerReadStatus';
+          const targetId=scanExpected==='offer'?'offerIn':'answerIn';
+          try{
+            const complete=await acceptQR(data,scanExpected,statusId,targetId);
+            if(complete){
+              $('scannerHint').textContent='讀取完成';
+              if(scanExpected==='offer') $('createAnswer').disabled=false;
+              else $('applyAnswer').disabled=false;
+              setTimeout(stopScanner,350);
+              return;
+            }else{
+              $('scannerHint').textContent='已讀取這一張；若有多張 QR，請掃下一張';
+              scanBusy=false;
+            }
+          }catch(err){
+            $('scannerHint').textContent='讀取失敗：'+err.message;
+            setTimeout(()=>{scanBusy=false},700);
+          }
+        }
+      }catch(_){}
+      scanRAF=requestAnimationFrame(loop);
+    }
+    scanRAF=requestAnimationFrame(loop);
+  }catch(e){
+    $('scannerPanel').classList.remove('hidden');
+    $('scannerHint').textContent=`相機啟動失敗：${e.name||''} ${e.message||e}`;
+  }
+}
+
+$('scanOfferQR').onclick=()=>startScanner('offer');
+$('scanAnswerQR').onclick=()=>startScanner('answer');
+$('closeScanner').onclick=stopScanner;
+
+</script>
 <style>
 :root{
   --bg:#f5f7fb;--card:#fff;--text:#111827;--muted:#6b7280;--line:#dbe2ea;
@@ -43,6 +247,12 @@ textarea{height:92px;resize:vertical;font-family:ui-monospace,Consolas,monospace
 .hidden{display:none!important}
 .sep{height:1px;background:var(--line);margin:14px 0}
 audio{width:100%;margin-top:10px}
+.scanner{background:#fff;border:1px solid var(--line);border-radius:16px;padding:14px;margin-bottom:14px}
+.scanner video{width:100%;max-height:480px;background:#000;border-radius:12px;display:block}
+.scanframe{position:relative}
+.scanhint{font-size:13px;color:var(--muted);margin-top:8px;text-align:center}
+.scanline{position:absolute;left:12%;right:12%;top:50%;height:2px;background:#22c55e;box-shadow:0 0 10px #22c55e;pointer-events:none}
+
 @media(max-width:600px){.wrap{padding:10px}.card{padding:14px}.qrstage{min-height:230px}}
 </style>
 </head>
@@ -92,6 +302,7 @@ audio{width:100%;margin-top:10px}
     <div class="sep"></div>
     <label>3. 讀取接收端 Answer QR</label>
     <div class="row">
+      <button id="scanAnswerQR" class="success">開相機掃 Answer</button>
       <label class="filebtn">讀取 QR 圖片<input id="answerQRFile" type="file" accept="image/*"></label>
       <button id="applyAnswer" class="primary" disabled>套用 Answer</button>
     </div>
@@ -114,6 +325,7 @@ audio{width:100%;margin-top:10px}
   <div class="card">
     <label>2. 讀取傳送端 Offer QR</label>
     <div class="row">
+      <button id="scanOfferQR" class="success">開相機掃 Offer</button>
       <label class="filebtn">讀取 QR 圖片<input id="offerQRFile" type="file" accept="image/*"></label>
       <button id="createAnswer" class="success" disabled>產生 Answer QR</button>
     </div>
@@ -146,6 +358,18 @@ audio{width:100%;margin-top:10px}
     <audio id="remoteAudio" autoplay playsinline controls></audio>
   </div>
 </section>
+
+<div id="scannerPanel" class="scanner hidden">
+  <div class="row" style="justify-content:space-between;margin-bottom:10px">
+    <strong id="scannerTitle">掃描 QR</strong>
+    <button id="closeScanner" class="danger">關閉相機</button>
+  </div>
+  <div class="scanframe">
+    <video id="scannerVideo" playsinline muted></video>
+    <div class="scanline"></div>
+  </div>
+  <div id="scannerHint" class="scanhint">請將 QR Code 放到畫面中央</div>
+</div>
 
 <div class="card small">
 QR 資料會先壓縮；若仍過長會自動切成多張。多張時請依序讀取每一張，全部收齊後才會啟用下一步。<br>
@@ -357,6 +581,108 @@ $('stopRecv').onclick=()=>{
   if(recvPC)recvPC.close();recvPC=null;$('remoteAudio').pause();$('remoteAudio').srcObject=null;if(recvCtx)recvCtx.close();recvCtx=null;
   cancelAnimationFrame(recvRAF);$('recvMeter').style.width='0%';$('playAudio').disabled=true;$('stopRecv').disabled=true;setStatus('recv','已停止接收','');
 };
+
+let scanStream=null,scanRAF=0,scanExpected=null,scanBusy=false;
+
+async function stopScanner(){
+  cancelAnimationFrame(scanRAF);
+  scanRAF=0;
+  scanBusy=false;
+  if(scanStream){
+    scanStream.getTracks().forEach(t=>t.stop());
+    scanStream=null;
+  }
+  $('scannerVideo').srcObject=null;
+  $('scannerPanel').classList.add('hidden');
+}
+
+async function startScanner(expected){
+  try{
+    await stopScanner();
+    scanExpected=expected;
+    $('scannerPanel').classList.remove('hidden');
+    $('scannerTitle').textContent=expected==='offer'?'掃描 Offer QR':'掃描 Answer QR';
+    $('scannerHint').textContent='正在開啟相機…';
+
+    scanStream=await navigator.mediaDevices.getUserMedia({
+      video:{
+        facingMode:{ideal:'environment'},
+        width:{ideal:1280},
+        height:{ideal:720}
+      },
+      audio:false
+    });
+
+    const v=$('scannerVideo');
+    v.srcObject=scanStream;
+    await v.play();
+    $('scannerHint').textContent='請將 QR Code 放到畫面中央';
+
+    let detector=null;
+    if('BarcodeDetector' in window){
+      try{
+        const supported=await BarcodeDetector.getSupportedFormats();
+        if(supported.includes('qr_code')) detector=new BarcodeDetector({formats:['qr_code']});
+      }catch(_){}
+    }
+
+    const canvas=document.createElement('canvas');
+    const ctx=canvas.getContext('2d',{willReadFrequently:true});
+
+    async function loop(){
+      if(!scanStream || scanBusy) return;
+      try{
+        let data=null;
+
+        if(detector){
+          const codes=await detector.detect(v);
+          if(codes && codes.length) data=codes[0].rawValue;
+        }else if(typeof jsQR==='function' && v.readyState>=2){
+          const max=1000;
+          const scale=Math.min(1,max/Math.max(v.videoWidth||1,v.videoHeight||1));
+          canvas.width=Math.max(1,Math.round((v.videoWidth||640)*scale));
+          canvas.height=Math.max(1,Math.round((v.videoHeight||480)*scale));
+          ctx.drawImage(v,0,0,canvas.width,canvas.height);
+          const im=ctx.getImageData(0,0,canvas.width,canvas.height);
+          const code=jsQR(im.data,im.width,im.height,{inversionAttempts:'attemptBoth'});
+          if(code) data=code.data;
+        }
+
+        if(data){
+          scanBusy=true;
+          const statusId=scanExpected==='offer'?'offerReadStatus':'answerReadStatus';
+          const targetId=scanExpected==='offer'?'offerIn':'answerIn';
+          try{
+            const complete=await acceptQR(data,scanExpected,statusId,targetId);
+            if(complete){
+              $('scannerHint').textContent='讀取完成';
+              if(scanExpected==='offer') $('createAnswer').disabled=false;
+              else $('applyAnswer').disabled=false;
+              setTimeout(stopScanner,350);
+              return;
+            }else{
+              $('scannerHint').textContent='已讀取這一張；若有多張 QR，請掃下一張';
+              scanBusy=false;
+            }
+          }catch(err){
+            $('scannerHint').textContent='讀取失敗：'+err.message;
+            setTimeout(()=>{scanBusy=false},700);
+          }
+        }
+      }catch(_){}
+      scanRAF=requestAnimationFrame(loop);
+    }
+    scanRAF=requestAnimationFrame(loop);
+  }catch(e){
+    $('scannerPanel').classList.remove('hidden');
+    $('scannerHint').textContent=`相機啟動失敗：${e.name||''} ${e.message||e}`;
+  }
+}
+
+$('scanOfferQR').onclick=()=>startScanner('offer');
+$('scanAnswerQR').onclick=()=>startScanner('answer');
+$('closeScanner').onclick=stopScanner;
+
 </script>
 </body>
 </html>
