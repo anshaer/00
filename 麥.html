@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>網頁音訊傳輸</title>
+<style>
+:root{
+  --bg:#f5f7fb;--card:#fff;--text:#111827;--muted:#6b7280;--line:#dbe2ea;
+  --blue:#2563eb;--blue2:#dbeafe;--green:#16a34a;--red:#dc2626;--orange:#ea580c;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,"Segoe UI","Noto Sans TC",sans-serif;background:var(--bg);color:var(--text)}
+.wrap{max-width:900px;margin:auto;padding:16px}
+h1{font-size:22px;margin:0 0 14px}
+.tabs{display:flex;gap:8px;margin-bottom:14px}
+.tab{flex:1;border:1px solid var(--line);background:#fff;border-radius:12px;padding:12px;font-size:16px;font-weight:700;cursor:pointer}
+.tab.active{background:var(--blue);color:#fff;border-color:var(--blue)}
+.panel{display:none}
+.panel.active{display:block}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;margin-bottom:14px;box-shadow:0 2px 8px rgba(15,23,42,.04)}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+button,select,textarea,input{font:inherit}
+button{border:0;border-radius:10px;padding:10px 14px;font-weight:700;cursor:pointer}
+.primary{background:var(--blue);color:white}
+.success{background:var(--green);color:#fff}
+.danger{background:var(--red);color:#fff}
+.warn{background:var(--orange);color:#fff}
+.ghost{background:#eef2f7;color:#111827}
+button:disabled{opacity:.45;cursor:not-allowed}
+label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px}
+select,textarea{width:100%;border:1px solid var(--line);border-radius:10px;background:white;padding:10px}
+textarea{height:150px;resize:vertical;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px}
+.status{font-weight:800}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:#9ca3af;margin-right:7px}
+.dot.ok{background:var(--green)}
+.dot.bad{background:var(--red)}
+.meter{height:18px;background:#e5e7eb;border-radius:99px;overflow:hidden}
+.bar{height:100%;width:0%;background:linear-gradient(90deg,#22c55e,#eab308,#ef4444);transition:width .06s linear}
+.small{font-size:13px;color:var(--muted)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+audio{width:100%;margin-top:10px}
+@media(max-width:650px){.grid{grid-template-columns:1fr}.wrap{padding:10px}textarea{height:135px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>網頁音訊傳輸</h1>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="send">傳送</button>
+    <button class="tab" data-tab="recv">接收</button>
+  </div>
+
+  <section id="send" class="panel active">
+    <div class="card">
+      <div class="status"><span id="sendDot" class="dot"></span><span id="sendStatus">尚未啟動麥克風</span></div>
+      <div class="small" style="margin-top:6px">即時使用 WebRTC 傳送麥克風音訊。</div>
+    </div>
+
+    <div class="card">
+      <label>麥克風</label>
+      <select id="micSelect"></select>
+      <div class="row" style="margin-top:10px">
+        <button id="startMic" class="primary">啟動麥克風</button>
+        <button id="muteMic" class="warn" disabled>暫停傳送</button>
+        <button id="stopSend" class="danger" disabled>停止</button>
+      </div>
+      <div style="margin-top:14px">
+        <label>輸入音量</label>
+        <div class="meter"><div id="sendMeter" class="bar"></div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <button id="createOffer" class="success" disabled>1. 產生 Offer</button>
+        <button id="copyOffer" class="ghost">複製 Offer</button>
+      </div>
+      <label style="margin-top:12px">把這段貼到接收端</label>
+      <textarea id="offerOut" placeholder="Offer 會出現在這裡"></textarea>
+
+      <label style="margin-top:12px">3. 貼上接收端產生的 Answer</label>
+      <textarea id="answerIn" placeholder="把接收端的 Answer 貼到這裡"></textarea>
+      <button id="applyAnswer" class="primary" style="margin-top:10px" disabled>套用 Answer / 建立連線</button>
+    </div>
+  </section>
+
+  <section id="recv" class="panel">
+    <div class="card">
+      <div class="status"><span id="recvDot" class="dot"></span><span id="recvStatus">等待配對</span></div>
+      <div class="small" style="margin-top:6px">接收端可直接在電腦、手機或 OBS Browser Source 使用。</div>
+    </div>
+
+    <div class="card">
+      <label>2. 貼上傳送端 Offer</label>
+      <textarea id="offerIn" placeholder="把傳送端的 Offer 貼到這裡"></textarea>
+      <button id="createAnswer" class="success" style="margin-top:10px">產生 Answer</button>
+
+      <label style="margin-top:12px">把這段貼回傳送端</label>
+      <textarea id="answerOut" placeholder="Answer 會出現在這裡"></textarea>
+      <div class="row" style="margin-top:10px">
+        <button id="copyAnswer" class="ghost">複製 Answer</button>
+        <button id="playAudio" class="primary" disabled>開始播放</button>
+        <button id="stopRecv" class="danger" disabled>停止接收</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <label>接收音量</label>
+      <div class="meter"><div id="recvMeter" class="bar"></div></div>
+      <audio id="remoteAudio" autoplay playsinline controls></audio>
+    </div>
+  </section>
+
+  <div class="card small">
+    使用方式：傳送端啟動麥克風 → 產生 Offer → 貼到接收端 → 接收端產生 Answer → 貼回傳送端 → 套用 Answer。<br>
+    手機瀏覽器通常需要 HTTPS 才能取得麥克風權限；iPhone/iPad 若未自動出聲，請按「開始播放」。
+  </div>
+</div>
+
+<script>
+let sendPC=null, recvPC=null, localStream=null, sendCtx=null, recvCtx=null;
+let sendRAF=0, recvRAF=0;
+
+const $=id=>document.getElementById(id);
+
+document.querySelectorAll('.tab').forEach(b=>{
+  b.onclick=()=>{
+    document.querySelectorAll('.tab,.panel').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active'); $(b.dataset.tab).classList.add('active');
+  };
+});
+
+function setStatus(type,text,state=''){
+  $(type+'Status').textContent=text;
+  $(type+'Dot').className='dot '+state;
+}
+
+async function listMics(){
+  try{
+    const devs=await navigator.mediaDevices.enumerateDevices();
+    const mics=devs.filter(d=>d.kind==='audioinput');
+    $('micSelect').innerHTML='';
+    mics.forEach((d,i)=>{
+      const o=document.createElement('option');
+      o.value=d.deviceId;o.textContent=d.label||`麥克風 ${i+1}`;
+      $('micSelect').appendChild(o);
+    });
+  }catch(e){}
+}
+listMics();
+navigator.mediaDevices?.addEventListener?.('devicechange',listMics);
+
+function meterFromStream(stream, barId, which){
+  const ctx=new (window.AudioContext||window.webkitAudioContext)();
+  const src=ctx.createMediaStreamSource(stream);
+  const analyser=ctx.createAnalyser();
+  analyser.fftSize=512;
+  src.connect(analyser);
+  const data=new Uint8Array(analyser.frequencyBinCount);
+  function loop(){
+    analyser.getByteTimeDomainData(data);
+    let sum=0;
+    for(const v of data){const x=(v-128)/128;sum+=x*x;}
+    const rms=Math.sqrt(sum/data.length);
+    const pct=Math.min(100,Math.max(0,rms*240));
+    $(barId).style.width=pct+'%';
+    const raf=requestAnimationFrame(loop);
+    if(which==='send') sendRAF=raf; else recvRAF=raf;
+  }
+  loop();
+  return ctx;
+}
+
+function pcConfig(){
+  return {iceServers:[{urls:'stun:stun.l.google.com:19302'}]};
+}
+
+async function waitIce(pc){
+  if(pc.iceGatheringState==='complete') return;
+  await new Promise(resolve=>{
+    const f=()=>{
+      if(pc.iceGatheringState==='complete'){
+        pc.removeEventListener('icegatheringstatechange',f);resolve();
+      }
+    };
+    pc.addEventListener('icegatheringstatechange',f);
+    setTimeout(resolve,5000);
+  });
+}
+
+$('startMic').onclick=async()=>{
+  try{
+    if(localStream) localStream.getTracks().forEach(t=>t.stop());
+    const deviceId=$('micSelect').value;
+    localStream=await navigator.mediaDevices.getUserMedia({
+      audio:{
+        deviceId:deviceId?{exact:deviceId}:undefined,
+        echoCancellation:true,noiseSuppression:true,autoGainControl:true
+      }
+    });
+    await listMics();
+    if(sendCtx) sendCtx.close();
+    sendCtx=meterFromStream(localStream,'sendMeter','send');
+    setStatus('send','麥克風已啟動','ok');
+    $('createOffer').disabled=false;
+    $('muteMic').disabled=false;
+    $('stopSend').disabled=false;
+  }catch(e){
+    setStatus('send','麥克風啟動失敗：'+e.message,'bad');
+  }
+};
+
+$('muteMic').onclick=()=>{
+  if(!localStream)return;
+  const t=localStream.getAudioTracks()[0];
+  t.enabled=!t.enabled;
+  $('muteMic').textContent=t.enabled?'暫停傳送':'恢復傳送';
+  setStatus('send',t.enabled?'麥克風傳送中':'已暫停傳送',t.enabled?'ok':'');
+};
+
+$('createOffer').onclick=async()=>{
+  try{
+    if(sendPC) sendPC.close();
+    sendPC=new RTCPeerConnection(pcConfig());
+    localStream.getTracks().forEach(t=>sendPC.addTrack(t,localStream));
+    sendPC.onconnectionstatechange=()=>{
+      const s=sendPC.connectionState;
+      setStatus('send','連線狀態：'+s,(s==='connected')?'ok':(s==='failed'||s==='closed')?'bad':'');
+    };
+    const offer=await sendPC.createOffer({offerToReceiveAudio:false});
+    await sendPC.setLocalDescription(offer);
+    await waitIce(sendPC);
+    $('offerOut').value=JSON.stringify(sendPC.localDescription);
+    $('applyAnswer').disabled=false;
+    setStatus('send','Offer 已產生，等待 Answer','');
+  }catch(e){
+    setStatus('send','產生 Offer 失敗：'+e.message,'bad');
+  }
+};
+
+$('applyAnswer').onclick=async()=>{
+  try{
+    const ans=JSON.parse($('answerIn').value.trim());
+    await sendPC.setRemoteDescription(ans);
+    setStatus('send','Answer 已套用，正在連線…','');
+  }catch(e){
+    setStatus('send','Answer 格式錯誤：'+e.message,'bad');
+  }
+};
+
+$('createAnswer').onclick=async()=>{
+  try{
+    if(recvPC) recvPC.close();
+    recvPC=new RTCPeerConnection(pcConfig());
+    recvPC.ontrack=async e=>{
+      const stream=e.streams[0]||new MediaStream([e.track]);
+      $('remoteAudio').srcObject=stream;
+      $('playAudio').disabled=false;
+      $('stopRecv').disabled=false;
+      if(recvCtx) recvCtx.close();
+      recvCtx=meterFromStream(stream,'recvMeter','recv');
+      try{await $('remoteAudio').play();}catch(_){}
+    };
+    recvPC.onconnectionstatechange=()=>{
+      const s=recvPC.connectionState;
+      setStatus('recv','連線狀態：'+s,(s==='connected')?'ok':(s==='failed'||s==='closed')?'bad':'');
+    };
+    const off=JSON.parse($('offerIn').value.trim());
+    await recvPC.setRemoteDescription(off);
+    const ans=await recvPC.createAnswer();
+    await recvPC.setLocalDescription(ans);
+    await waitIce(recvPC);
+    $('answerOut').value=JSON.stringify(recvPC.localDescription);
+    setStatus('recv','Answer 已產生，請貼回傳送端','');
+  }catch(e){
+    setStatus('recv','建立 Answer 失敗：'+e.message,'bad');
+  }
+};
+
+$('playAudio').onclick=async()=>{
+  try{
+    await $('remoteAudio').play();
+    setStatus('recv','音訊播放中','ok');
+  }catch(e){setStatus('recv','播放失敗：'+e.message,'bad');}
+};
+
+$('stopSend').onclick=()=>{
+  if(sendPC)sendPC.close();sendPC=null;
+  if(localStream)localStream.getTracks().forEach(t=>t.stop());localStream=null;
+  if(sendCtx)sendCtx.close();sendCtx=null;
+  cancelAnimationFrame(sendRAF);
+  $('sendMeter').style.width='0%';
+  $('createOffer').disabled=true;$('muteMic').disabled=true;$('stopSend').disabled=true;$('applyAnswer').disabled=true;
+  setStatus('send','已停止','');
+};
+
+$('stopRecv').onclick=()=>{
+  if(recvPC)recvPC.close();recvPC=null;
+  $('remoteAudio').pause();$('remoteAudio').srcObject=null;
+  if(recvCtx)recvCtx.close();recvCtx=null;
+  cancelAnimationFrame(recvRAF);
+  $('recvMeter').style.width='0%';
+  $('playAudio').disabled=true;$('stopRecv').disabled=true;
+  setStatus('recv','已停止接收','');
+};
+
+async function copyText(id){
+  const el=$(id);
+  try{await navigator.clipboard.writeText(el.value);}
+  catch(_){el.select();document.execCommand('copy');}
+}
+$('copyOffer').onclick=()=>copyText('offerOut');
+$('copyAnswer').onclick=()=>copyText('answerOut');
+</script>
+</body>
+</html>
