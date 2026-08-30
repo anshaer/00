@@ -1,0 +1,445 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OBS WebRTC Audio Receiver</title>
+<style>
+html,body{
+  margin:0;width:100%;height:100%;
+  background:transparent;overflow:hidden;
+  font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif
+}
+body{position:relative}
+
+#dot{
+  position:absolute;
+  right:14px;
+  top:14px;
+  width:22px;
+  height:22px;
+  border-radius:50%;
+  background:#777;
+  box-shadow:0 0 0 2px rgba(255,255,255,.18);
+  transition:background .16s,transform .16s;
+  z-index:10;
+  cursor:pointer;
+}
+#dot:active{transform:scale(.92)}
+
+#panel{
+  position:absolute;
+  top:46px;
+  right:14px;
+  width:290px;
+  max-width:calc(100vw - 28px);
+  background:rgba(255,255,255,.98);
+  color:#111;
+  border-radius:12px;
+  padding:14px;
+  box-shadow:0 10px 28px rgba(0,0,0,.28);
+  z-index:9;
+}
+#panel.hidden{display:none}
+
+h1{
+  font-size:15px;
+  margin:0 0 10px;
+}
+
+label{
+  display:block;
+  font-size:12px;
+  color:#555;
+  margin:9px 0 4px;
+}
+
+input{
+  width:100%;
+  min-height:38px;
+  box-sizing:border-box;
+  border:1px solid #bbb;
+  border-radius:8px;
+  padding:7px 9px;
+  font-size:15px;
+}
+
+button{
+  width:100%;
+  min-height:40px;
+  margin-top:12px;
+  border:0;
+  border-radius:8px;
+  background:#1769e0;
+  color:white;
+  font-size:15px;
+  cursor:pointer;
+}
+
+#msg{
+  min-height:18px;
+  margin-top:8px;
+  color:#b3261e;
+  font-size:12px;
+  white-space:pre-wrap;
+}
+.small{
+  margin-top:8px;
+  color:#777;
+  font-size:11px;
+  line-height:1.4;
+}
+</style>
+</head>
+<body>
+
+<div id="dot" title="WebRTC 狀態 / 點一下開啟設定"></div>
+
+<div id="panel" class="hidden">
+  <h1>OBS WebSocket 設定</h1>
+
+  <label for="host">IP</label>
+  <input id="host" value="127.0.0.1" autocomplete="off">
+
+  <label for="port">連接埠</label>
+  <input id="port" inputmode="numeric" value="4455" autocomplete="off">
+
+  <label for="password">密碼</label>
+  <input id="password" type="password" value="123456789" autocomplete="off">
+
+  <button id="connectBtn">套用 / 重新連線</button>
+  <div id="msg"></div>
+  <div class="small">點右上狀態點可開啟 / 收合設定。</div>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+const APP='obs-audio-bridge-v1';
+const receiverId=crypto.randomUUID?crypto.randomUUID():Math.random().toString(36).slice(2);
+const peers=new Map();
+
+const dot=document.getElementById('dot');
+const panel=document.getElementById('panel');
+const msg=document.getElementById('msg');
+const connectBtn=document.getElementById('connectBtn');
+
+const COLOR={
+  idle:'#777',
+  wait:'#e0aa18',
+  ok:'#20b85a',
+  err:'#e24a4a'
+};
+
+function setState(s){
+  dot.style.background=COLOR[s]||COLOR.idle;
+}
+setState('idle');
+
+dot.addEventListener('click',e=>{
+  e.stopPropagation();
+  panel.classList.toggle('hidden');
+});
+
+panel.addEventListener('click',e=>e.stopPropagation());
+
+document.body.addEventListener('click',()=>{
+  if(!panel.classList.contains('hidden')){
+    panel.classList.add('hidden');
+  }
+});
+
+function b64(bytes){
+  let s='';
+  bytes.forEach(b=>s+=String.fromCharCode(b));
+  return btoa(s);
+}
+
+async function sha256Bytes(text){
+  return new Uint8Array(
+    await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text))
+  );
+}
+
+async function makeAuth(password,salt,challenge){
+  const secret=b64(await sha256Bytes(password+salt));
+  return b64(await sha256Bytes(secret+challenge));
+}
+
+class ObsWS{
+  constructor(){
+    this.ws=null;
+    this.ready=false;
+    this.onCustom=null;
+    this.req=0;
+  }
+
+  connect(url,password){
+    return new Promise((resolve,reject)=>{
+      let settled=false;
+
+      try{
+        this.ws=new WebSocket(url,'obswebsocket.json');
+      }catch(e){
+        reject(e);
+        return;
+      }
+
+      const fail=e=>{
+        if(!settled){
+          settled=true;
+          reject(e instanceof Error?e:new Error('WebSocket 連線失敗'));
+        }
+      };
+
+      this.ws.onerror=()=>fail(new Error('OBS WebSocket 無法連線'));
+
+      this.ws.onclose=e=>{
+        this.ready=false;
+        if(!settled){
+          fail(new Error(`OBS WebSocket 關閉 (${e.code})`));
+        }else{
+          setState('err');
+        }
+      };
+
+      this.ws.onmessage=async ev=>{
+        let m;
+        try{m=JSON.parse(ev.data)}catch{return}
+
+        if(m.op===0){
+          try{
+            const hello=m.d||{};
+            const identify={rpcVersion:1,eventSubscriptions:1};
+
+            if(hello.authentication){
+              if(!password)throw new Error('OBS WebSocket 需要密碼');
+
+              identify.authentication=await makeAuth(
+                password,
+                hello.authentication.salt,
+                hello.authentication.challenge
+              );
+            }
+
+            this.ws.send(JSON.stringify({op:1,d:identify}));
+          }catch(e){
+            fail(e);
+            try{this.ws.close()}catch{}
+          }
+
+        }else if(m.op===2){
+          this.ready=true;
+          if(!settled){
+            settled=true;
+            resolve();
+          }
+
+        }else if(m.op===5&&m.d?.eventType==='CustomEvent'){
+          const d=m.d.eventData;
+          if(d?.app===APP&&this.onCustom){
+            this.onCustom(d);
+          }
+        }
+      };
+    });
+  }
+
+  broadcast(data){
+    if(!this.ready)return;
+    this.req++;
+
+    this.ws.send(JSON.stringify({
+      op:6,
+      d:{
+        requestType:'BroadcastCustomEvent',
+        requestId:'bridge-'+Date.now()+'-'+this.req,
+        requestData:{
+          eventData:{
+            app:APP,
+            ...data
+          }
+        }
+      }
+    }));
+  }
+
+  close(){
+    try{
+      if(this.ws)this.ws.close();
+    }catch{}
+  }
+}
+
+let obs=new ObsWS();
+
+function attachObsHandler(){
+  obs.onCustom=async m=>{
+    if(m.role!=='phone')return;
+
+    if(m.kind==='offer'){
+      return acceptOffer(m);
+    }
+
+    if(m.kind==='ice'&&m.peerId){
+      const state=peers.get(m.peerId);
+      if(!state||!m.candidate)return;
+
+      try{
+        if(state.pc.remoteDescription){
+          await state.pc.addIceCandidate(m.candidate);
+        }else{
+          state.remoteIce.push(m.candidate);
+        }
+      }catch(e){
+        console.warn(e);
+      }
+    }
+  };
+}
+attachObsHandler();
+
+function pcConfig(){
+  return {
+    iceServers:[
+      {urls:'stun:stun.l.google.com:19302'},
+      {urls:'stun:stun1.l.google.com:19302'}
+    ]
+  };
+}
+
+async function acceptOffer(m){
+  const peerId=m.peerId;
+  if(!peerId||!m.sdp)return;
+
+  if(peers.has(peerId)){
+    try{peers.get(peerId).pc.close()}catch{}
+    peers.delete(peerId);
+  }
+
+  setState('wait');
+
+  const pc=new RTCPeerConnection(pcConfig());
+
+  const audio=document.createElement('audio');
+  audio.autoplay=true;
+  audio.playsInline=true;
+  audio.style.display='none';
+  document.body.appendChild(audio);
+
+  const state={pc,audio,remoteIce:[]};
+  peers.set(peerId,state);
+
+  pc.ontrack=async e=>{
+    const stream=e.streams?.[0]||new MediaStream([e.track]);
+    audio.srcObject=stream;
+    audio.muted=false;
+    audio.volume=1;
+    try{await audio.play()}catch{}
+  };
+
+  pc.onicecandidate=e=>{
+    if(e.candidate){
+      obs.broadcast({
+        role:'obs',
+        kind:'ice',
+        peerId,
+        receiverId,
+        candidate:e.candidate.toJSON
+          ? e.candidate.toJSON()
+          : e.candidate
+      });
+    }
+  };
+
+  pc.onconnectionstatechange=()=>{
+    const s=pc.connectionState;
+
+    if(s==='connected'){
+      setState('ok');
+    }else if(['connecting','new'].includes(s)){
+      setState('wait');
+    }else if(['failed','disconnected'].includes(s)){
+      setState('err');
+    }else if(s==='closed'){
+      peers.delete(peerId);
+      if(!peers.size)setState('idle');
+    }
+  };
+
+  try{
+    await pc.setRemoteDescription({
+      type:'offer',
+      sdp:m.sdp
+    });
+
+    for(const c of state.remoteIce.splice(0)){
+      try{await pc.addIceCandidate(c)}catch{}
+    }
+
+    const answer=await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+
+    obs.broadcast({
+      role:'obs',
+      kind:'answer',
+      peerId,
+      receiverId,
+      sdp:pc.localDescription.sdp
+    });
+
+  }catch(e){
+    console.error(e);
+    setState('err');
+  }
+}
+
+connectBtn.addEventListener('click',async()=>{
+  const host=document.getElementById('host').value.trim();
+  const port=document.getElementById('port').value.trim();
+  const password=document.getElementById('password').value;
+
+  msg.textContent='';
+
+  if(!host){
+    msg.textContent='請輸入 IP。';
+    return;
+  }
+
+  if(!/^\d+$/.test(port)||+port<1||+port>65535){
+    msg.textContent='連接埠格式錯誤。';
+    return;
+  }
+
+  connectBtn.disabled=true;
+  connectBtn.textContent='連線中…';
+  setState('wait');
+
+  try{
+    obs.close();
+    obs=new ObsWS();
+    attachObsHandler();
+
+    await obs.connect(`ws://${host}:${port}`,password);
+
+    msg.textContent='';
+    panel.classList.add('hidden');
+
+    // OBS WebSocket 已連上，但 WebRTC 尚未連線。
+    setState('idle');
+
+  }catch(e){
+    console.error(e);
+    setState('err');
+    msg.textContent=e.message||String(e);
+  }finally{
+    connectBtn.disabled=false;
+    connectBtn.textContent='套用 / 重新連線';
+  }
+});
+})();
+</script>
+
+</body>
+</html>
