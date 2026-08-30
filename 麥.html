@@ -304,8 +304,8 @@ audio{width:100%;margin-top:10px}
       <div class="small" style="margin-bottom:12px">
         順序：① 掃描傳送端 Offer QR，或讀取 QR ZIP →
         ② 全部 Offer QR 收齊後會自動關閉相機並產生 Answer QR →
-        ③ 讓傳送端掃描 Answer QR →
-        ④ 連線完成且收到第一筆音訊後，Answer QR 會自動隱藏。
+        ③ 讓發起端掃描 Answer QR →
+        ④ 完成連線後 Answer QR 仍會保留，可再次掃描或下載。
       </div>
 
       <div class="qrBlock">
@@ -325,10 +325,6 @@ audio{width:100%;margin-top:10px}
         <div id="answerView" class="hidden">
           <div id="answerQR" class="qrStage"></div>
           <div id="answerQRMeta" class="qrMeta"></div>
-        </div>
-
-        <div id="pairDoneView" class="qrStage hidden">
-          <div class="small">已完成配對並收到音訊，QR 已自動隱藏。</div>
         </div>
 
         <div id="recvIdle" class="qrStage">
@@ -406,7 +402,6 @@ const recvParts = {
 let decodedOfferText = '';
 let decodedAnswerText = '';
 let latencyTimer = 0;
-let firstAudioReceived = false;
 
 const QR_VERSION = 5;
 const QR_CHUNK = 68;
@@ -964,9 +959,7 @@ async function buildAnswerQR(){
 
     $('recvIdle').classList.add('hidden');
     $('recvCameraView').classList.add('hidden');
-    $('pairDoneView').classList.add('hidden');
     $('answerView').classList.remove('hidden');
-    firstAudioReceived = false;
 
     setLamp('wait');
     setRecvInfo('正在產生 Answer QR…');
@@ -980,15 +973,6 @@ async function buildAnswerQR(){
 
     recvPC.ontrack = async e=>{
       remoteStream = e.streams[0] || new MediaStream([e.track]);
-
-      if(!firstAudioReceived){
-        firstAudioReceived = true;
-        clearInterval(answerTimer);
-        $('answerView').classList.add('hidden');
-        $('pairDoneView').classList.remove('hidden');
-        $('downloadAnswerQR').disabled = true;
-        $('recvQRProgress').textContent = '已收到第一筆音訊，Answer QR 已自動隱藏。';
-      }
 
       const audio = $('remoteAudio');
       audio.srcObject = remoteStream;
