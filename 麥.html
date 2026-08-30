@@ -252,9 +252,9 @@ audio{width:100%;margin-top:10px}
       <div class="sectionTitle">QR 配對</div>
       <div class="small" style="margin-bottom:12px">
         順序：① 掃描傳送端 Offer QR，或讀取 QR ZIP →
-        ② 全部 Offer QR 收齊後按「Answer QR」 →
-        ③ 相機會自動關閉並顯示 Answer QR →
-        ④ 讓傳送端掃描 Answer QR 即可完成連線。
+        ② 全部 Offer QR 收齊後會自動關閉相機並產生 Answer QR →
+        ③ 讓傳送端掃描 Answer QR →
+        ④ 連線完成且收到第一筆音訊後，Answer QR 會自動隱藏。
       </div>
 
       <div class="qrBlock">
@@ -276,6 +276,10 @@ audio{width:100%;margin-top:10px}
           <div id="answerQRMeta" class="qrMeta"></div>
         </div>
 
+        <div id="pairDoneView" class="qrStage hidden">
+          <div class="small">已完成配對並收到音訊，QR 已自動隱藏。</div>
+        </div>
+
         <div id="recvIdle" class="qrStage">
           <div class="small">請先掃描或讀取傳送端 Offer QR</div>
         </div>
@@ -286,7 +290,7 @@ audio{width:100%;margin-top:10px}
             讀取 QR ZIP
             <input id="offerQRFile" type="file" accept=".zip,application/zip">
           </label>
-          <button id="makeAnswerQR" class="primary" disabled>Answer QR</button>
+          <button id="makeAnswerQR" class="primary" disabled>重新產生 Answer QR</button>
           <button id="downloadAnswerQR" class="ghost" disabled>下載 QR ZIP</button>
         </div>
 
@@ -342,6 +346,7 @@ const recvParts = {
 let decodedOfferText = '';
 let decodedAnswerText = '';
 let latencyTimer = 0;
+let firstAudioReceived = false;
 
 const QR_VERSION = 5;
 const QR_CHUNK = 68;
@@ -785,7 +790,9 @@ async function buildAnswerQR(){
 
     $('recvIdle').classList.add('hidden');
     $('recvCameraView').classList.add('hidden');
+    $('pairDoneView').classList.add('hidden');
     $('answerView').classList.remove('hidden');
+    firstAudioReceived = false;
 
     setLamp('wait');
     setRecvInfo('正在產生 Answer QR…');
@@ -795,6 +802,16 @@ async function buildAnswerQR(){
 
     recvPC.ontrack = async e=>{
       remoteStream = e.streams[0] || new MediaStream([e.track]);
+
+      if(!firstAudioReceived){
+        firstAudioReceived = true;
+        clearInterval(answerTimer);
+        $('answerView').classList.add('hidden');
+        $('pairDoneView').classList.remove('hidden');
+        $('downloadAnswerQR').disabled = true;
+        $('recvQRProgress').textContent = '已收到第一筆音訊，Answer QR 已自動隱藏。';
+      }
+
       const audio = $('remoteAudio');
       audio.srcObject = remoteStream;
       audio.muted = false;
@@ -843,6 +860,7 @@ async function buildAnswerQR(){
     startCarousel('answer');
 
     $('downloadAnswerQR').disabled = false;
+    $('makeAnswerQR').disabled = false;
     $('recvQRProgress').textContent = `Answer 已切成 ${answerParts.length} 張 QR，自動輪播中。`;
     setRecvInfo('Answer QR 已產生，請讓傳送端掃描');
 
@@ -933,10 +951,11 @@ $('offerQRFile').addEventListener('change', async e=>{
     $('recvIdle').classList.add('hidden');
     const r=await readQRZip(e.target.files[0],'offer');
     if(r?.done){
-      $('makeAnswerQR').disabled=false;
+      $('makeAnswerQR').disabled=true;
       setLamp('wait');
-      setRecvInfo('Offer QR ZIP 已讀取完成，請按 Answer QR');
-      $('recvQRProgress').textContent=`Offer ZIP 已完成：${r.total} / ${r.total} 張 QR`;
+      setRecvInfo('Offer QR ZIP 已讀取完成，正在自動產生 Answer QR…');
+      $('recvQRProgress').textContent=`Offer ZIP 已完成：${r.total} / ${r.total} 張 QR，正在產生 Answer…`;
+      await buildAnswerQR();
     }
   }catch(err){
     setLamp('bad');
@@ -1085,10 +1104,11 @@ $('scanOfferQR').addEventListener('click', async()=>{
         const r=await acceptPacket(data,'offer');
         $('recvScanInfo').textContent=`已讀取 ${r.count} / ${r.total} 張`;
         if(r.done){
-          $('makeAnswerQR').disabled=false;
-          $('recvScanInfo').textContent='Offer QR 已完整讀取，請按 Answer QR';
+          $('makeAnswerQR').disabled=true;
+          $('recvScanInfo').textContent='Offer QR 已完整讀取，正在自動產生 Answer QR…';
           setLamp('wait');
-          setRecvInfo('Offer QR 已讀取完成');
+          setRecvInfo('Offer QR 已讀取完成，正在自動產生 Answer QR…');
+          await buildAnswerQR();
         }
       }catch(_){}
     }, ()=>!!recvCamStream);
