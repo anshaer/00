@@ -1,0 +1,463 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>NFC WebRTC 傳檔</title>
+<style>
+:root{
+  --bg:#f6f7f9;--card:#fff;--text:#111;--muted:#666;--blue:#1769e0;
+  --green:#138a4b;--orange:#d97706;--red:#c62828;--line:#ddd;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+main{max-width:760px;margin:auto;padding:18px 14px 80px}
+h1{font-size:24px;margin:4px 0 6px}
+.sub{color:var(--muted);font-size:14px;line-height:1.55;margin-bottom:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin:10px 0}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+button{
+  border:0;border-radius:10px;padding:11px 14px;font-size:15px;font-weight:700;
+  background:#e9edf3;color:#111;cursor:pointer
+}
+button.primary{background:var(--blue);color:#fff}
+button.good{background:var(--green);color:#fff}
+button.warn{background:var(--orange);color:#fff}
+button.danger{background:var(--red);color:#fff}
+button:disabled{opacity:.45;cursor:not-allowed}
+.status{font-size:16px;font-weight:800;margin-bottom:5px}
+.small{font-size:13px;color:var(--muted);line-height:1.5}
+.bar{height:12px;background:#e8e8e8;border-radius:999px;overflow:hidden;margin:10px 0}
+.bar>div{height:100%;width:0;background:var(--blue);transition:.2s}
+code{font-family:ui-monospace,Consolas,monospace}
+input[type=file]{width:100%;margin:8px 0}
+.log{
+  height:170px;overflow:auto;background:#101214;color:#d9f2df;border-radius:10px;
+  padding:10px;font:12px/1.45 ui-monospace,Consolas,monospace;white-space:pre-wrap
+}
+.badge{display:inline-block;border-radius:999px;padding:4px 9px;background:#eee;font-size:12px;font-weight:700}
+.hidden{display:none!important}
+footer{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid #ddd;padding:7px 12px;text-align:center;color:#777;font-size:11px}
+</style>
+</head>
+<body>
+<main>
+  <h1>NFC WebRTC 傳檔</h1>
+  <div class="sub">
+    純 HTML / Web NFC。無 QR、無 Cloudflare、無藍牙。<br>
+    <b>需要一張可重寫 NFC Tag 作為中繼。</b> Web NFC 不能讓另一支手機瀏覽器直接模擬 NFC 卡片。
+  </div>
+
+  <section class="card">
+    <div class="status">1. 選擇角色</div>
+    <div class="row">
+      <button id="recvBtn" class="primary">接收端 / 建立 Offer</button>
+      <button id="sendBtn" class="good">傳送端 / 讀 Offer</button>
+      <button id="resetBtn">重置</button>
+    </div>
+    <div class="small" style="margin-top:8px">
+      接收端先建立 Offer 並逐筆寫入 NFC Tag；傳送端逐筆讀取。Offer 收完整後，傳送端建立 Answer，再反向逐筆寫回。
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="status">2. NFC Signaling</div>
+    <div id="modeText" class="badge">尚未選擇角色</div>
+    <div id="phaseText" class="small" style="margin-top:10px">待機</div>
+    <div class="bar"><div id="sigBar"></div></div>
+    <div id="sigCount" class="small">0 / 0</div>
+
+    <div class="row" style="margin-top:12px">
+      <button id="writeBtn" class="primary" disabled>寫入目前資料到 NFC</button>
+      <button id="readBtn" class="good" disabled>從 NFC 讀取資料</button>
+    </div>
+    <div class="small" style="margin-top:10px">
+      建議每完成一筆後，把同一張 NFC Tag 移到另一台手機。程式會依 <code>session / type / index / total</code> 自動累積。
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="status">3. WebRTC</div>
+    <div id="rtcText" class="small">尚未建立</div>
+  </section>
+
+  <section class="card">
+    <div class="status">4. 傳檔</div>
+    <input id="fileInput" type="file" disabled>
+    <div class="row">
+      <button id="fileSendBtn" class="warn" disabled>傳送檔案</button>
+    </div>
+    <div class="bar"><div id="fileBar"></div></div>
+    <div id="fileText" class="small">DataChannel OPEN 後可使用</div>
+  </section>
+
+  <section class="card">
+    <div class="status">紀錄</div>
+    <div id="log" class="log"></div>
+  </section>
+</main>
+
+<footer>@ anshaer.com &amp; 早.cc &amp; Anshaer All rights reserved.</footer>
+
+<script>
+(() => {
+'use strict';
+
+const $ = s => document.querySelector(s);
+const enc = new TextEncoder();
+const dec = new TextDecoder();
+
+const CHUNK_CHARS = 420; // 保守值；實際可依 Tag 容量加大
+let role = null;
+let phase = 'idle';
+let pc = null;
+let dc = null;
+let session = randomId();
+let localSignal = '';
+let localChunks = [];
+let localIndex = 0;
+let incoming = new Map();
+let incomingType = null;
+let incomingTotal = 0;
+let incomingSession = null;
+
+let rxFileName = '';
+let rxFileSize = 0;
+let rxParts = [];
+let rxBytes = 0;
+
+function log(s){
+  const el = $('#log');
+  el.textContent += `[${new Date().toLocaleTimeString()}] ${s}\n`;
+  el.scrollTop = el.scrollHeight;
+}
+function randomId(){
+  const b = crypto.getRandomValues(new Uint8Array(6));
+  return [...b].map(x=>x.toString(16).padStart(2,'0')).join('');
+}
+function setPhase(s){ phase=s; $('#phaseText').textContent=s; }
+function setSigProgress(n,t){
+  $('#sigCount').textContent = `${n} / ${t}`;
+  $('#sigBar').style.width = t ? `${Math.min(100,n*100/t)}%` : '0%';
+}
+function setRtc(s){ $('#rtcText').textContent=s; log(s); }
+
+function supported(){
+  if(!('NDEFReader' in window)){
+    alert('此瀏覽器沒有 Web NFC（NDEFReader）。請使用支援 Web NFC 的 Android Chromium 瀏覽器。');
+    return false;
+  }
+  if(!('RTCPeerConnection' in window)){
+    alert('此瀏覽器不支援 WebRTC');
+    return false;
+  }
+  return true;
+}
+
+function makePeer(){
+  if(pc) pc.close();
+  pc = new RTCPeerConnection({iceServers:[]});
+
+  pc.onconnectionstatechange = () => {
+    setRtc(`PeerConnection：${pc.connectionState}`);
+  };
+  pc.oniceconnectionstatechange = () => {
+    log(`ICE：${pc.iceConnectionState}`);
+  };
+  pc.ondatachannel = e => attachDC(e.channel);
+  return pc;
+}
+
+function attachDC(ch){
+  dc = ch;
+  dc.binaryType = 'arraybuffer';
+  dc.onopen = () => {
+    setRtc('DataChannel：OPEN');
+    $('#fileInput').disabled = role !== 'sender';
+    $('#fileSendBtn').disabled = role !== 'sender';
+    $('#fileText').textContent = role === 'sender' ? '可以選擇檔案傳送' : '等待接收檔案';
+  };
+  dc.onclose = () => setRtc('DataChannel：CLOSED');
+  dc.onerror = () => setRtc('DataChannel：ERROR');
+
+  dc.onmessage = e => {
+    if(typeof e.data === 'string'){
+      const msg = JSON.parse(e.data);
+      if(msg.t === 'meta'){
+        rxFileName = msg.name || 'received.bin';
+        rxFileSize = msg.size || 0;
+        rxParts = [];
+        rxBytes = 0;
+        $('#fileText').textContent = `接收 ${rxFileName}`;
+      }
+      if(msg.t === 'done'){
+        const blob = new Blob(rxParts);
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = rxFileName || 'received.bin';
+        a.click();
+        setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+        $('#fileBar').style.width='100%';
+        $('#fileText').textContent=`接收完成：${rxFileName}`;
+      }
+      return;
+    }
+    rxParts.push(e.data);
+    rxBytes += e.data.byteLength;
+    const p = rxFileSize ? rxBytes*100/rxFileSize : 0;
+    $('#fileBar').style.width = `${Math.min(100,p)}%`;
+    $('#fileText').textContent = `接收中 ${rxBytes} / ${rxFileSize} bytes`;
+  };
+}
+
+function waitIceComplete(pc){
+  return new Promise(resolve => {
+    if(pc.iceGatheringState === 'complete') return resolve();
+    const f = () => {
+      if(pc.iceGatheringState === 'complete'){
+        pc.removeEventListener('icegatheringstatechange', f);
+        resolve();
+      }
+    };
+    pc.addEventListener('icegatheringstatechange', f);
+  });
+}
+
+function prepareLocal(type, text){
+  localSignal = text;
+  localChunks = [];
+  for(let i=0;i<text.length;i+=CHUNK_CHARS){
+    localChunks.push(text.slice(i,i+CHUNK_CHARS));
+  }
+  localIndex = 0;
+  setSigProgress(0, localChunks.length);
+  $('#writeBtn').disabled = false;
+  log(`${type} 已切成 ${localChunks.length} 筆 NFC 資料`);
+}
+
+async function createOffer(){
+  makePeer();
+  attachDC(pc.createDataChannel('file'));
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+  setPhase('收集 ICE…');
+  await waitIceComplete(pc);
+
+  prepareLocal('offer', pc.localDescription.sdp);
+  setPhase('請把第 1 筆 Offer 寫入 NFC Tag');
+}
+
+async function acceptOfferAndCreateAnswer(sdp){
+  makePeer();
+  await pc.setRemoteDescription({type:'offer', sdp});
+  const answer = await pc.createAnswer();
+  await pc.setLocalDescription(answer);
+  setPhase('收集 Answer ICE…');
+  await waitIceComplete(pc);
+
+  prepareLocal('answer', pc.localDescription.sdp);
+  setPhase('Offer 完整。現在把 Answer 第 1 筆寫回 NFC Tag');
+}
+
+async function applyAnswer(sdp){
+  await pc.setRemoteDescription({type:'answer', sdp});
+  setPhase('Answer 已完整套用，等待 WebRTC');
+  $('#writeBtn').disabled = true;
+  $('#readBtn').disabled = true;
+  log('NFC signaling 完成');
+}
+
+function makePacket(type,index,total,data){
+  return JSON.stringify({
+    v:1,
+    sid:session,
+    type,
+    index,
+    total,
+    data
+  });
+}
+
+async function writeCurrent(){
+  if(!supported()) return;
+  if(!localChunks.length) return;
+
+  const type = role === 'receiver' ? 'offer' : 'answer';
+  const pkt = makePacket(type, localIndex, localChunks.length, localChunks[localIndex]);
+
+  const ndef = new NDEFReader();
+  setPhase(`請將 NFC Tag 靠近本手機：寫入 ${type} ${localIndex+1}/${localChunks.length}`);
+  try{
+    await ndef.write({
+      records:[{
+        recordType:'mime',
+        mediaType:'application/json',
+        data:enc.encode(pkt)
+      }]
+    });
+    localIndex++;
+    setSigProgress(localIndex,localChunks.length);
+
+    if(localIndex >= localChunks.length){
+      $('#writeBtn').disabled = true;
+      $('#readBtn').disabled = false;
+
+      if(role === 'receiver'){
+        setPhase('Offer 已全部寫出。現在請在接收端讀取傳送端的 Answer');
+      }else{
+        setPhase('Answer 已全部寫出。接收端讀完後即可建立 WebRTC');
+      }
+    }else{
+      setPhase(`第 ${localIndex} 筆完成。請讓對方讀取後，再回來寫第 ${localIndex+1} 筆`);
+    }
+  }catch(e){
+    setPhase(`NFC 寫入失敗：${e.message}`);
+  }
+}
+
+async function readOne(){
+  if(!supported()) return;
+  const ndef = new NDEFReader();
+  setPhase('請將 NFC Tag 靠近本手機：等待讀取…');
+
+  try{
+    await ndef.scan();
+    ndef.onreadingerror = () => setPhase('NFC 讀取錯誤，請重試');
+    ndef.onreading = async ev => {
+      for(const rec of ev.message.records){
+        if(rec.recordType !== 'mime') continue;
+        try{
+          const pkt = JSON.parse(dec.decode(rec.data));
+          if(pkt.v !== 1) continue;
+
+          const expected = role === 'sender' ? 'offer' : 'answer';
+          if(pkt.type !== expected){
+            setPhase(`目前需要 ${expected}，Tag 裡是 ${pkt.type}`);
+            return;
+          }
+
+          if(!incomingSession){
+            incomingSession = pkt.sid;
+            incomingType = pkt.type;
+            incomingTotal = pkt.total;
+            incoming.clear();
+          }
+
+          if(pkt.sid !== incomingSession){
+            setPhase('偵測到不同 session，請重置後再開始');
+            return;
+          }
+
+          incoming.set(pkt.index, pkt.data);
+          setSigProgress(incoming.size, incomingTotal);
+          log(`讀取 ${pkt.type} ${pkt.index+1}/${pkt.total}`);
+
+          if(incoming.size >= incomingTotal){
+            let text='';
+            for(let i=0;i<incomingTotal;i++){
+              if(!incoming.has(i)){
+                setPhase(`缺少第 ${i+1} 筆`);
+                return;
+              }
+              text += incoming.get(i);
+            }
+
+            $('#readBtn').disabled = true;
+
+            if(role === 'sender'){
+              session = incomingSession;
+              setPhase('Offer 完整，正在建立 Answer…');
+              await acceptOfferAndCreateAnswer(text);
+            }else{
+              setPhase('Answer 完整，正在套用…');
+              await applyAnswer(text);
+            }
+          }else{
+            setPhase(`已讀 ${incoming.size}/${incomingTotal}。請讓另一台寫下一筆，再回來讀`);
+          }
+        }catch(e){
+          setPhase(`解析 NFC 資料失敗：${e.message}`);
+        }
+      }
+    };
+  }catch(e){
+    setPhase(`NFC 掃描失敗：${e.message}`);
+  }
+}
+
+async function sendFile(){
+  const f = $('#fileInput').files[0];
+  if(!f || !dc || dc.readyState !== 'open') return;
+
+  $('#fileSendBtn').disabled = true;
+  $('#fileBar').style.width='0%';
+  dc.send(JSON.stringify({t:'meta',name:f.name,size:f.size,type:f.type}));
+
+  const CHUNK = 32 * 1024;
+  let pos = 0;
+  while(pos < f.size){
+    while(dc.bufferedAmount > 4*1024*1024){
+      await new Promise(r=>setTimeout(r,20));
+    }
+    const end = Math.min(pos+CHUNK,f.size);
+    const buf = await f.slice(pos,end).arrayBuffer();
+    dc.send(buf);
+    pos=end;
+    $('#fileBar').style.width=`${pos*100/f.size}%`;
+    $('#fileText').textContent=`傳送中 ${pos} / ${f.size} bytes`;
+  }
+
+  dc.send(JSON.stringify({t:'done'}));
+  $('#fileText').textContent='傳送完成';
+  $('#fileSendBtn').disabled=false;
+}
+
+function resetAll(){
+  role=null; phase='idle'; session=randomId();
+  localSignal='';localChunks=[];localIndex=0;
+  incoming.clear();incomingType=null;incomingTotal=0;incomingSession=null;
+  if(dc) try{dc.close()}catch{}
+  if(pc) try{pc.close()}catch{}
+  dc=null;pc=null;
+  $('#modeText').textContent='尚未選擇角色';
+  setPhase('待機');
+  setSigProgress(0,0);
+  setRtc('尚未建立');
+  $('#writeBtn').disabled=true;
+  $('#readBtn').disabled=true;
+  $('#fileInput').disabled=true;
+  $('#fileSendBtn').disabled=true;
+  $('#fileBar').style.width='0%';
+  $('#fileText').textContent='DataChannel OPEN 後可使用';
+  log('已重置');
+}
+
+$('#recvBtn').onclick = async()=>{
+  if(!supported()) return;
+  resetAll();
+  role='receiver';
+  $('#modeText').textContent='接收端 / Offerer';
+  $('#readBtn').disabled=true;
+  try{ await createOffer(); }
+  catch(e){ setPhase(`建立 Offer 失敗：${e.message}`); }
+};
+
+$('#sendBtn').onclick = ()=>{
+  if(!supported()) return;
+  resetAll();
+  role='sender';
+  $('#modeText').textContent='傳送端 / Answerer';
+  $('#readBtn').disabled=false;
+  setPhase('請先從 NFC Tag 讀取接收端的 Offer 第 1 筆');
+};
+
+$('#resetBtn').onclick=resetAll;
+$('#writeBtn').onclick=writeCurrent;
+$('#readBtn').onclick=readOne;
+$('#fileSendBtn').onclick=sendFile;
+
+resetAll();
+})();
+</script>
+</body>
+</html>
