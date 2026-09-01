@@ -3,104 +3,142 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>NFC WebRTC 傳檔</title>
+<title>WebRTC傳輸工具</title>
 <style>
 :root{
-  --bg:#f6f7f9;--card:#fff;--text:#111;--muted:#666;--blue:#1769e0;
-  --green:#138a4b;--orange:#d97706;--red:#c62828;--line:#ddd;
+  --bg:#eeeeee;--top:#050505;--text:#050505;--line:#696969;
+  --green:#11ee37;--white:#fff;--muted:#666;
 }
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-main{max-width:760px;margin:auto;padding:18px 14px 80px}
-h1{font-size:24px;margin:4px 0 6px}
-.sub{color:var(--muted);font-size:14px;line-height:1.55;margin-bottom:14px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin:10px 0}
-.row{display:flex;gap:8px;flex-wrap:wrap}
+html,body{margin:0;background:var(--bg);color:var(--text);font-family:Arial,"Noto Sans TC",sans-serif}
+body.flash::before{
+  content:"";position:fixed;inset:0;background:rgba(0,255,64,.52);
+  pointer-events:none;z-index:9999;animation:okflash .5s linear 1;
+}
+@keyframes okflash{0%{opacity:0}15%{opacity:1}100%{opacity:0}}
+header{
+  height:78px;background:var(--top);color:#fff;display:flex;align-items:center;
+  padding:0 15px;border-bottom:2px solid #999;
+}
+header h1{font-size:29px;font-weight:500;margin:0;white-space:nowrap}
+.lights{margin-left:auto;display:flex;gap:18px;align-items:center}
+.light{
+  width:23px;height:23px;border-radius:50%;background:#777;border:1px solid #333;
+}
+.light.on{background:var(--green);box-shadow:0 0 8px rgba(0,255,40,.35)}
+main{padding:22px 23px 18px;max-width:760px;margin:auto}
 button{
-  border:0;border-radius:10px;padding:11px 14px;font-size:15px;font-weight:700;
-  background:#e9edf3;color:#111;cursor:pointer
+  border:2px solid var(--line);background:#f3f3f3;color:#000;border-radius:12px;
+  min-height:62px;font-size:28px;padding:8px 15px;cursor:pointer;
 }
-button.primary{background:var(--blue);color:#fff}
-button.good{background:var(--green);color:#fff}
-button.warn{background:var(--orange);color:#fff}
-button.danger{background:var(--red);color:#fff}
+button:active{background:#ddd}
 button:disabled{opacity:.45;cursor:not-allowed}
-.status{font-size:16px;font-weight:800;margin-bottom:5px}
-.small{font-size:13px;color:var(--muted);line-height:1.5}
-.bar{height:12px;background:#e8e8e8;border-radius:999px;overflow:hidden;margin:10px 0}
-.bar>div{height:100%;width:0;background:var(--blue);transition:.2s}
-code{font-family:ui-monospace,Consolas,monospace}
-input[type=file]{width:100%;margin:8px 0}
-.log{
-  height:170px;overflow:auto;background:#101214;color:#d9f2df;border-radius:10px;
-  padding:10px;font:12px/1.45 ui-monospace,Consolas,monospace;white-space:pre-wrap
+.full{width:100%}
+.pair{
+  display:grid;grid-template-columns:1fr 1fr;gap:28px;margin:12px 46px;
 }
-.badge{display:inline-block;border-radius:999px;padding:4px 9px;background:#eee;font-size:12px;font-weight:700}
-.hidden{display:none!important}
-footer{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid #ddd;padding:7px 12px;text-align:center;color:#777;font-size:11px}
+.square{
+  position:relative;aspect-ratio:1/1;border:2px solid var(--line);border-radius:37px;
+  background:#f3f3f3;overflow:hidden;min-width:0;
+}
+.square .label{
+  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-size:29px;z-index:3;pointer-events:none;background:rgba(243,243,243,.0)
+}
+#qrCanvas{width:100%;height:100%;display:block;background:#fff}
+#camera{
+  width:100%;height:100%;display:block;object-fit:cover;background:#111;transform:scaleX(-1)
+}
+#qrBox.active .label,#camBox.active .label{display:none}
+.qrtype{
+  position:absolute;left:6px;right:6px;bottom:7px;z-index:4;text-align:center;
+  font-size:13px;font-weight:700;background:rgba(255,255,255,.88);border-radius:7px;padding:3px 5px;
+}
+.camstate{
+  position:absolute;left:6px;right:6px;bottom:7px;z-index:4;text-align:center;
+  font-size:12px;background:rgba(0,0,0,.75);color:#fff;border-radius:7px;padding:4px;
+}
+.add{margin:12px 0}
+.transfer{
+  display:grid;grid-template-columns:1fr 1fr;border:2px solid var(--line);
+  min-height:370px;background:#f3f3f3
+}
+.column{min-width:0;padding:14px 10px}
+.column+ .column{border-left:2px solid var(--line)}
+.column h2{
+  font-size:28px;font-weight:500;text-align:center;margin:150px 0 18px
+}
+.list{margin:0;padding:0;list-style:none;font-size:14px}
+.item{
+  border-top:1px solid #aaa;padding:8px 4px;display:grid;gap:5px
+}
+.item:first-child{border-top:0}
+.name{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.progress{height:6px;background:#ddd;border-radius:99px;overflow:hidden}
+.progress i{display:block;height:100%;width:0;background:#222}
+.meta{font-size:11px;color:#666}
+#fileInput{display:none}
+.debug{
+  margin-top:10px;font-size:11px;color:#666;line-height:1.45;word-break:break-all
+}
+@media(max-width:480px){
+ header h1{font-size:23px}
+ main{padding:16px 14px}
+ .pair{margin:12px 24px;gap:22px}
+ button{font-size:23px;min-height:58px}
+ .square .label{font-size:25px}
+ .transfer{min-height:350px}
+ .column h2{font-size:24px;margin-top:145px}
+}
 </style>
 </head>
 <body>
+<header>
+  <h1>WebRTC傳輸工具</h1>
+  <div class="lights">
+    <span id="lightA" class="light" title="WebRTC A"></span>
+    <span id="lightB" class="light" title="WebRTC B"></span>
+  </div>
+</header>
+
 <main>
-  <h1>NFC WebRTC 傳檔</h1>
-  <div class="sub">
-    純 HTML / Web NFC。無 QR、無 Cloudflare、無藍牙。<br>
-    <b>需要一張可重寫 NFC Tag 作為中繼。</b> Web NFC 不能讓另一支手機瀏覽器直接模擬 NFC 卡片。<br>
-    本版要求：Android Chromium + HTTPS + NDEF 可寫入 Tag。
+  <button id="startBtn" class="full">連線QR收合</button>
+
+  <div class="pair" id="pairArea">
+    <div class="square" id="qrBox">
+      <canvas id="qrCanvas"></canvas>
+      <div class="label">QR碼</div>
+      <div id="qrType" class="qrtype" hidden>建立中</div>
+    </div>
+
+    <div class="square" id="camBox">
+      <video id="camera" playsinline muted></video>
+      <div class="label">相機</div>
+      <div id="camState" class="camstate" hidden>待機</div>
+    </div>
   </div>
 
-  <section class="card">
-    <div class="status">1. 選擇角色</div>
-    <div class="row">
-      <button id="recvBtn" class="primary">接收端 / 建立 Offer</button>
-      <button id="sendBtn" class="good">傳送端 / 讀 Offer</button>
-      <button id="resetBtn">重置</button>
-    </div>
-    <div class="small" style="margin-top:8px">
-      接收端先建立 Offer 並逐筆寫入 NFC Tag；傳送端逐筆讀取。Offer 收完整後，傳送端建立 Answer，再反向逐筆寫回。
-    </div>
-  </section>
+  <div class="add">
+    <button id="addBtn" class="full" disabled>新增傳輸檔案鍵</button>
+    <input id="fileInput" type="file" multiple>
+  </div>
 
-  <section class="card">
-    <div class="status">2. NFC Signaling</div>
-    <div id="modeText" class="badge">尚未選擇角色</div>
-    <div id="phaseText" class="small" style="margin-top:10px">待機</div>
-    <div class="bar"><div id="sigBar"></div></div>
-    <div id="sigCount" class="small">0 / 0</div>
-
-    <div class="row" style="margin-top:12px">
-      <button id="testWriteBtn" class="warn">測試 NFC 寫入</button>
-      <button id="writeBtn" class="primary" disabled>寫入目前資料到 NFC</button>
-      <button id="readBtn" class="good" disabled>從 NFC 讀取資料</button>
+  <section class="transfer">
+    <div class="column">
+      <h2>傳送列表</h2>
+      <ul id="sendList" class="list"></ul>
     </div>
-    <div class="small" style="margin-top:10px">
-      建議每完成一筆後，把同一張 NFC Tag 移到另一台手機。程式會依 <code>session / type / index / total</code> 自動累積。
+    <div class="column">
+      <h2>接收列表</h2>
+      <ul id="recvList" class="list"></ul>
     </div>
   </section>
 
-  <section class="card">
-    <div class="status">3. WebRTC</div>
-    <div id="rtcText" class="small">尚未建立</div>
-  </section>
-
-  <section class="card">
-    <div class="status">4. 傳檔</div>
-    <input id="fileInput" type="file" disabled>
-    <div class="row">
-      <button id="fileSendBtn" class="warn" disabled>傳送檔案</button>
-    </div>
-    <div class="bar"><div id="fileBar"></div></div>
-    <div id="fileText" class="small">DataChannel OPEN 後可使用</div>
-  </section>
-
-  <section class="card">
-    <div class="status">紀錄</div>
-    <div id="log" class="log"></div>
-  </section>
+  <div id="debug" class="debug">未啟動</div>
 </main>
 
-<footer>@ anshaer.com &amp; 早.cc &amp; Anshaer All rights reserved.</footer>
-
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <script>
 (() => {
 'use strict';
@@ -109,407 +147,354 @@ const $ = s => document.querySelector(s);
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
-const CHUNK_CHARS = 180; // 保守值；實際可依 Tag 容量加大
-let role = null;
-let phase = 'idle';
-let pc = null;
-let dc = null;
-let session = randomId();
-let localSignal = '';
-let localChunks = [];
-let localIndex = 0;
-let incoming = new Map();
-let incomingType = null;
-let incomingTotal = 0;
-let incomingSession = null;
+const QR_FPS = 30;
+const QR_PART = 520;
+const FILE_CHUNK = 32 * 1024;
+const ICE_TIMEOUT = 8000;
 
-let rxFileName = '';
-let rxFileSize = 0;
-let rxParts = [];
-let rxBytes = 0;
+const deviceId = randomHex(8);
+const bootId = randomHex(5);
 
-function log(s){
-  const el = $('#log');
-  el.textContent += `[${new Date().toLocaleTimeString()}] ${s}\n`;
-  el.scrollTop = el.scrollHeight;
-}
-function randomId(){
-  const b = crypto.getRandomValues(new Uint8Array(6));
-  return [...b].map(x=>x.toString(16).padStart(2,'0')).join('');
-}
-function setPhase(s){ phase=s; $('#phaseText').textContent=s; }
-function setSigProgress(n,t){
-  $('#sigCount').textContent = `${n} / ${t}`;
-  $('#sigBar').style.width = t ? `${Math.min(100,n*100/t)}%` : '0%';
-}
-function setRtc(s){ $('#rtcText').textContent=s; log(s); }
+let started = false;
+let qrTimer = 0;
+let scanTimer = 0;
+let stream = null;
+let videoCanvas = document.createElement('canvas');
+let videoCtx = videoCanvas.getContext('2d', {willReadFrequently:true});
 
-function supported(){
-  if(!window.isSecureContext){
-    alert('Web NFC 必須在 HTTPS 安全來源執行。請不要直接用 file:// 開啟此 HTML，請放到 HTTPS 網頁空間後再開。');
-    log('ERROR: 非安全來源。location=' + location.href);
-    return false;
-  }
-  if(!('NDEFReader' in window)){
-    alert('此瀏覽器沒有 Web NFC（NDEFReader）。請使用支援 Web NFC 的 Android Chromium 瀏覽器。');
-    log('ERROR: NDEFReader 不存在');
-    return false;
-  }
-  if(!('RTCPeerConnection' in window)){
-    alert('此瀏覽器不支援 WebRTC');
-    return false;
-  }
-  return true;
+const links = new Map();
+const incomingSignals = new Map();
+const outgoingPackets = [];
+let qrCursor = 0;
+let connectedOnce = false;
+
+function rand(n){const a=new Uint8Array(n);crypto.getRandomValues(a);return a}
+function randomHex(n){return [...rand(n)].map(x=>x.toString(16).padStart(2,'0')).join('')}
+function log(s){ $('#debug').textContent = s; }
+
+function flashGreen(){
+  if(connectedOnce) return;
+  connectedOnce = true;
+  document.body.classList.remove('flash');
+  void document.body.offsetWidth;
+  document.body.classList.add('flash');
+  setTimeout(()=>document.body.classList.remove('flash'),520);
 }
 
-function makePeer(){
-  if(pc) pc.close();
-  pc = new RTCPeerConnection({iceServers:[]});
+function linkLight(id,on){
+  const el = id==='A' ? $('#lightA') : $('#lightB');
+  el.classList.toggle('on', !!on);
+  if(on) flashGreen();
+}
 
-  pc.onconnectionstatechange = () => {
-    setRtc(`PeerConnection：${pc.connectionState}`);
+function makeLink(id){
+  const pc = new RTCPeerConnection({iceServers:[
+    {urls:'stun:stun.l.google.com:19302'},
+    {urls:'stun:stun.cloudflare.com:3478'}
+  ]});
+  const link = {id, pc, dc:null, localType:null, localSdp:null, remoteSet:false, open:false};
+  links.set(id,link);
+
+  pc.onconnectionstatechange=()=>{
+    log(`${id} ${pc.connectionState}`);
+    if(pc.connectionState==='connected') linkLight(id,true);
+    if(['failed','closed','disconnected'].includes(pc.connectionState) && !link.open) linkLight(id,false);
   };
-  pc.oniceconnectionstatechange = () => {
-    log(`ICE：${pc.iceConnectionState}`);
-  };
-  pc.ondatachannel = e => attachDC(e.channel);
-  return pc;
+  pc.ondatachannel=e=>attachDC(link,e.channel);
+  return link;
 }
 
-function attachDC(ch){
-  dc = ch;
-  dc.binaryType = 'arraybuffer';
-  dc.onopen = () => {
-    setRtc('DataChannel：OPEN');
-    $('#fileInput').disabled = role !== 'sender';
-    $('#fileSendBtn').disabled = role !== 'sender';
-    $('#fileText').textContent = role === 'sender' ? '可以選擇檔案傳送' : '等待接收檔案';
-  };
-  dc.onclose = () => setRtc('DataChannel：CLOSED');
-  dc.onerror = () => setRtc('DataChannel：ERROR');
+function attachDC(link,dc){
+  link.dc=dc; dc.binaryType='arraybuffer';
+  let rx=null;
 
-  dc.onmessage = e => {
-    if(typeof e.data === 'string'){
-      const msg = JSON.parse(e.data);
-      if(msg.t === 'meta'){
-        rxFileName = msg.name || 'received.bin';
-        rxFileSize = msg.size || 0;
-        rxParts = [];
-        rxBytes = 0;
-        $('#fileText').textContent = `接收 ${rxFileName}`;
-      }
-      if(msg.t === 'done'){
-        const blob = new Blob(rxParts);
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = rxFileName || 'received.bin';
-        a.click();
-        setTimeout(()=>URL.revokeObjectURL(a.href),2000);
-        $('#fileBar').style.width='100%';
-        $('#fileText').textContent=`接收完成：${rxFileName}`;
+  dc.onopen=()=>{
+    link.open=true;linkLight(link.id,true);
+    $('#addBtn').disabled=false;
+    log(`WebRTC ${link.id} DataChannel OPEN`);
+  };
+  dc.onclose=()=>{link.open=false; if(![...links.values()].some(x=>x.open&&x.id===link.id)) linkLight(link.id,false)};
+  dc.onerror=()=>log(`WebRTC ${link.id} DataChannel ERROR`);
+
+  dc.onmessage=e=>{
+    if(typeof e.data==='string'){
+      let m; try{m=JSON.parse(e.data)}catch{return}
+      if(m.t==='meta'){
+        rx={id:m.id,name:m.name,size:m.size,type:m.type||'',parts:[],bytes:0,row:addRecvRow(m.name,m.size)};
+      }else if(m.t==='done' && rx && m.id===rx.id){
+        const blob=new Blob(rx.parts,{type:rx.type||'application/octet-stream'});
+        const a=document.createElement('a');
+        a.href=URL.createObjectURL(blob);a.download=rx.name;a.click();
+        setTimeout(()=>URL.revokeObjectURL(a.href),3000);
+        setRow(rx.row,100,`完成 · ${fmt(rx.size)}`);
+        rx=null;
       }
       return;
     }
-    rxParts.push(e.data);
-    rxBytes += e.data.byteLength;
-    const p = rxFileSize ? rxBytes*100/rxFileSize : 0;
-    $('#fileBar').style.width = `${Math.min(100,p)}%`;
-    $('#fileText').textContent = `接收中 ${rxBytes} / ${rxFileSize} bytes`;
+    if(rx){
+      rx.parts.push(e.data);rx.bytes+=e.data.byteLength;
+      setRow(rx.row,rx.size?rx.bytes*100/rx.size:0,`${fmt(rx.bytes)} / ${fmt(rx.size)}`);
+    }
   };
 }
 
-function waitIceComplete(pc){
-  return new Promise(resolve => {
-    if(pc.iceGatheringState === 'complete') return resolve();
-    const f = () => {
-      if(pc.iceGatheringState === 'complete'){
-        pc.removeEventListener('icegatheringstatechange', f);
-        resolve();
-      }
-    };
-    pc.addEventListener('icegatheringstatechange', f);
+function waitIce(pc){
+  return new Promise(resolve=>{
+    if(pc.iceGatheringState==='complete') return resolve();
+    const t=setTimeout(()=>{pc.removeEventListener('icegatheringstatechange',f);resolve()},ICE_TIMEOUT);
+    const f=()=>{if(pc.iceGatheringState==='complete'){clearTimeout(t);pc.removeEventListener('icegatheringstatechange',f);resolve()}};
+    pc.addEventListener('icegatheringstatechange',f);
   });
 }
 
-function prepareLocal(type, text){
-  localSignal = text;
-  localChunks = [];
-  for(let i=0;i<text.length;i+=CHUNK_CHARS){
-    localChunks.push(text.slice(i,i+CHUNK_CHARS));
-  }
-  localIndex = 0;
-  setSigProgress(0, localChunks.length);
-  $('#writeBtn').disabled = false;
-  log(`${type} 已切成 ${localChunks.length} 筆 NFC 資料`);
+async function createOurOffer(id){
+  const link=makeLink(id);
+  const dc=link.pc.createDataChannel('file-'+id,{ordered:true});
+  attachDC(link,dc);
+  const offer=await link.pc.createOffer();
+  await link.pc.setLocalDescription(offer);
+  await waitIce(link.pc);
+  link.localType='offer'; link.localSdp=link.pc.localDescription.sdp;
+  await enqueueSignal(id,'OFFER',link.localSdp);
 }
 
-async function createOffer(){
-  makePeer();
-  attachDC(pc.createDataChannel('file'));
-  const offer = await pc.createOffer();
-  await pc.setLocalDescription(offer);
-  setPhase('收集 ICE…');
-  await waitIceComplete(pc);
+async function answerRemoteOffer(remoteLinkId, sdp, remoteDevice){
+  // Remote A is answered by our B, remote B by our A.
+  const localId = remoteLinkId==='A' ? 'B' : 'A';
+  let link=links.get(localId);
 
-  prepareLocal('offer', pc.localDescription.sdp);
-  setPhase('請把第 1 筆 Offer 寫入 NFC Tag');
+  // If this local link already has its own offer, keep it for the first connection
+  // and create a dedicated answer lane with matching remote ID namespace.
+  const answerId='R'+remoteLinkId+'-'+remoteDevice.slice(0,4);
+  link=makeLink(answerId);
+
+  await link.pc.setRemoteDescription({type:'offer',sdp});
+  const answer=await link.pc.createAnswer();
+  await link.pc.setLocalDescription(answer);
+  await waitIce(link.pc);
+  link.localType='answer';link.localSdp=link.pc.localDescription.sdp;
+  link.answerFor={remoteDevice,remoteLinkId};
+  await enqueueSignal(remoteLinkId,'ANSWER',link.localSdp,remoteDevice,answerId);
 }
 
-async function acceptOfferAndCreateAnswer(sdp){
-  makePeer();
-  await pc.setRemoteDescription({type:'offer', sdp});
-  const answer = await pc.createAnswer();
-  await pc.setLocalDescription(answer);
-  setPhase('收集 Answer ICE…');
-  await waitIceComplete(pc);
-
-  prepareLocal('answer', pc.localDescription.sdp);
-  setPhase('Offer 完整。現在把 Answer 第 1 筆寫回 NFC Tag');
+async function applyRemoteAnswer(pkt,sdp){
+  // Answer tells us which original offer lane it answers.
+  const link=links.get(pkt.lane);
+  if(!link || link.remoteSet) return;
+  try{
+    await link.pc.setRemoteDescription({type:'answer',sdp});
+    link.remoteSet=true;
+    log(`Answer 套用：${pkt.lane}`);
+  }catch(e){log(`Answer 套用失敗 ${pkt.lane}: ${e.message}`)}
 }
 
-async function applyAnswer(sdp){
-  await pc.setRemoteDescription({type:'answer', sdp});
-  setPhase('Answer 已完整套用，等待 WebRTC');
-  $('#writeBtn').disabled = true;
-  $('#readBtn').disabled = true;
-  log('NFC signaling 完成');
+async function compressText(text){
+  if(!('CompressionStream' in window)) return {z:0,d:b64(enc.encode(text))};
+  const cs=new CompressionStream('deflate');
+  const w=cs.writable.getWriter();
+  w.write(enc.encode(text));w.close();
+  const ab=await new Response(cs.readable).arrayBuffer();
+  return {z:1,d:b64(new Uint8Array(ab))};
+}
+async function decompressText(z,data){
+  const bytes=unb64(data);
+  if(!z) return dec.decode(bytes);
+  const ds=new DecompressionStream('deflate');
+  const w=ds.writable.getWriter();w.write(bytes);w.close();
+  return await new Response(ds.readable).text();
+}
+function b64(bytes){
+  let s=''; for(let i=0;i<bytes.length;i+=0x8000)s+=String.fromCharCode(...bytes.subarray(i,i+0x8000));
+  return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+function unb64(s){
+  s=s.replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';
+  const b=atob(s),a=new Uint8Array(b.length);for(let i=0;i<b.length;i++)a[i]=b.charCodeAt(i);return a;
 }
 
-function makePacket(type,index,total,data){
-  return JSON.stringify({
-    v:1,
-    sid:session,
-    type,
-    index,
-    total,
-    data
+async function enqueueSignal(lane,type,sdp,target=null,answerId=null){
+  const packed=await compressText(sdp);
+  const signalId=randomHex(5);
+  const pieces=[];
+  for(let i=0;i<packed.d.length;i+=QR_PART) pieces.push(packed.d.slice(i,i+QR_PART));
+  pieces.forEach((piece,index)=>{
+    outgoingPackets.push({
+      v:2,app:'WRTQ',from:deviceId,boot:bootId,target,
+      sid:signalId,lane,type,z:packed.z,i:index,n:pieces.length,d:piece,
+      aid:answerId||null
+    });
   });
+  log(`${type} ${lane}: ${pieces.length} QR`);
 }
 
-async function writeCurrent(){
-  if(!supported()) return;
-  if(!localChunks.length) return;
+function isForUs(p){
+  return !p.target || p.target===deviceId;
+}
+async function receivePacket(p){
+  if(!p || p.v!==2 || p.app!=='WRTQ' || p.from===deviceId || !isForUs(p)) return;
 
-  const type = role === 'receiver' ? 'offer' : 'answer';
-  const pkt = makePacket(type, localIndex, localChunks.length, localChunks[localIndex]);
+  const key=[p.from,p.sid,p.type,p.lane].join('|');
+  let box=incomingSignals.get(key);
+  if(!box){
+    box={n:p.n,z:p.z,parts:new Array(p.n),count:0,p};
+    incomingSignals.set(key,box);
+  }
+  if(!box.parts[p.i]){
+    box.parts[p.i]=p.d;box.count++;
+    $('#camState').textContent=`${p.type} ${box.count}/${box.n}`;
+  }
+  if(box.count===box.n && !box.done){
+    box.done=true;
+    const text=await decompressText(box.z,box.parts.join(''));
+    if(p.type==='OFFER'){
+      $('#camState').textContent=`Offer完成 → Answer`;
+      await answerRemoteOffer(p.lane,text,p.from);
+    }else if(p.type==='ANSWER'){
+      $('#camState').textContent=`Answer完成`;
+      await applyRemoteAnswer(p,text);
+    }
+  }
+}
 
-  const ndef = new NDEFReader();
-  setPhase(`請將 NFC Tag 靠近本手機：寫入 ${type} ${localIndex+1}/${localChunks.length}`);
+async function drawNextQR(){
+  if(!started || !outgoingPackets.length || !window.QRCode) return;
+  // Prefer ANSWER packets after any are available, while still cycling offers.
+  const answers=outgoingPackets.filter(x=>x.type==='ANSWER');
+  const offers=outgoingPackets.filter(x=>x.type==='OFFER');
+  let pool = answers.length ? answers.concat(offers.slice(0,Math.max(1,Math.ceil(offers.length/4)))) : offers;
+  if(!pool.length) return;
+  const p=pool[qrCursor++ % pool.length];
+  const txt=JSON.stringify(p);
   try{
-    await ndef.write({
-      records:[{
-        recordType:'text',
-        data:pkt,
-        lang:'zh-TW',
-        encoding:'utf-8'
-      }]
+    await QRCode.toCanvas($('#qrCanvas'),txt,{
+      errorCorrectionLevel:'L',margin:1,width:420,
+      color:{dark:'#000000',light:'#ffffff'}
     });
-    localIndex++;
-    setSigProgress(localIndex,localChunks.length);
-
-    if(localIndex >= localChunks.length){
-      $('#writeBtn').disabled = true;
-      $('#readBtn').disabled = false;
-
-      if(role === 'receiver'){
-        setPhase('Offer 已全部寫出。現在請在接收端讀取傳送端的 Answer');
-      }else{
-        setPhase('Answer 已全部寫出。接收端讀完後即可建立 WebRTC');
-      }
-    }else{
-      setPhase(`第 ${localIndex} 筆完成。請讓對方讀取後，再回來寫第 ${localIndex+1} 筆`);
-    }
-  }catch(e){
-    const detail = `${e.name || 'Error'}: ${e.message || String(e)}`;
-    setPhase(`NFC 寫入失敗：${detail}`);
-    log(`NFC WRITE ERROR -> ${detail}`);
-    if(e.name === 'NotAllowedError'){
-      log('提示：確認是 HTTPS、由按鈕操作觸發、Chrome 已允許 NFC 權限。');
-    }else if(e.name === 'NotSupportedError'){
-      log('提示：Tag 可能不是 NDEF、已鎖定，或裝置/瀏覽器不支援此寫法。');
-    }else if(e.name === 'NetworkError'){
-      log('提示：Tag 太快移開、NFC 天線沒對準，或寫入過程中斷。');
-    }else if(e.name === 'AbortError'){
-      log('提示：NFC 操作被取消或標籤離開感應範圍。');
-    }
-  }
+    $('#qrBox').classList.add('active');
+    $('#qrType').hidden=false;
+    $('#qrType').textContent=`${p.type} ${p.lane} · ${p.i+1}/${p.n} · 30Hz`;
+  }catch(e){log('QR生成失敗：'+e.message)}
 }
 
-async function readOne(){
-  if(!supported()) return;
-  const ndef = new NDEFReader();
-  setPhase('請將 NFC Tag 靠近本手機：等待讀取…');
+async function startCamera(){
+  stream=await navigator.mediaDevices.getUserMedia({
+    video:{facingMode:'user',width:{ideal:1280},height:{ideal:720}},
+    audio:false
+  });
+  const v=$('#camera');v.srcObject=stream;await v.play();
+  $('#camBox').classList.add('active');$('#camState').hidden=false;$('#camState').textContent='掃描中';
+}
+
+async function scanFrame(){
+  if(!started) return;
+  const v=$('#camera');
+  if(v.readyState<2) return;
+  const w=v.videoWidth,h=v.videoHeight;if(!w||!h)return;
+  const max=720,scale=Math.min(1,max/w);
+  videoCanvas.width=Math.max(1,Math.round(w*scale));
+  videoCanvas.height=Math.max(1,Math.round(h*scale));
+  videoCtx.drawImage(v,0,0,videoCanvas.width,videoCanvas.height);
 
   try{
-    await ndef.scan();
-    ndef.onreadingerror = () => setPhase('NFC 讀取錯誤，請重試');
-    ndef.onreading = async ev => {
-      for(const rec of ev.message.records){
-        if(rec.recordType !== 'text' && rec.recordType !== 'mime') continue;
-        try{
-          let raw;
-          if(rec.recordType === 'text'){
-            raw = dec.decode(rec.data);
-          }else{
-            raw = dec.decode(rec.data);
-          }
-          const pkt = JSON.parse(raw);
-          if(pkt.v !== 1) continue;
-
-          const expected = role === 'sender' ? 'offer' : 'answer';
-          if(pkt.type !== expected){
-            setPhase(`目前需要 ${expected}，Tag 裡是 ${pkt.type}`);
-            return;
-          }
-
-          if(!incomingSession){
-            incomingSession = pkt.sid;
-            incomingType = pkt.type;
-            incomingTotal = pkt.total;
-            incoming.clear();
-          }
-
-          if(pkt.sid !== incomingSession){
-            setPhase('偵測到不同 session，請重置後再開始');
-            return;
-          }
-
-          incoming.set(pkt.index, pkt.data);
-          setSigProgress(incoming.size, incomingTotal);
-          log(`讀取 ${pkt.type} ${pkt.index+1}/${pkt.total}`);
-
-          if(incoming.size >= incomingTotal){
-            let text='';
-            for(let i=0;i<incomingTotal;i++){
-              if(!incoming.has(i)){
-                setPhase(`缺少第 ${i+1} 筆`);
-                return;
-              }
-              text += incoming.get(i);
-            }
-
-            $('#readBtn').disabled = true;
-
-            if(role === 'sender'){
-              session = incomingSession;
-              setPhase('Offer 完整，正在建立 Answer…');
-              await acceptOfferAndCreateAnswer(text);
-            }else{
-              setPhase('Answer 完整，正在套用…');
-              await applyAnswer(text);
-            }
-          }else{
-            setPhase(`已讀 ${incoming.size}/${incomingTotal}。請讓另一台寫下一筆，再回來讀`);
-          }
-        }catch(e){
-          setPhase(`解析 NFC 資料失敗：${e.message}`);
-        }
-      }
-    };
-  }catch(e){
-    setPhase(`NFC 掃描失敗：${e.message}`);
-  }
-}
-
-async function sendFile(){
-  const f = $('#fileInput').files[0];
-  if(!f || !dc || dc.readyState !== 'open') return;
-
-  $('#fileSendBtn').disabled = true;
-  $('#fileBar').style.width='0%';
-  dc.send(JSON.stringify({t:'meta',name:f.name,size:f.size,type:f.type}));
-
-  const CHUNK = 32 * 1024;
-  let pos = 0;
-  while(pos < f.size){
-    while(dc.bufferedAmount > 4*1024*1024){
-      await new Promise(r=>setTimeout(r,20));
+    let raw=null;
+    if('BarcodeDetector' in window){
+      if(!scanFrame.detector) scanFrame.detector=new BarcodeDetector({formats:['qr_code']});
+      const list=await scanFrame.detector.detect(videoCanvas);
+      if(list.length) raw=list[0].rawValue;
+    }else if(window.jsQR){
+      const img=videoCtx.getImageData(0,0,videoCanvas.width,videoCanvas.height);
+      const qr=jsQR(img.data,img.width,img.height,{inversionAttempts:'attemptBoth'});
+      if(qr) raw=qr.data;
     }
-    const end = Math.min(pos+CHUNK,f.size);
-    const buf = await f.slice(pos,end).arrayBuffer();
-    dc.send(buf);
-    pos=end;
-    $('#fileBar').style.width=`${pos*100/f.size}%`;
-    $('#fileText').textContent=`傳送中 ${pos} / ${f.size} bytes`;
-  }
-
-  dc.send(JSON.stringify({t:'done'}));
-  $('#fileText').textContent='傳送完成';
-  $('#fileSendBtn').disabled=false;
+    if(raw){
+      let p;try{p=JSON.parse(raw)}catch{return}
+      await receivePacket(p);
+    }
+  }catch(e){}
 }
 
-
-async function testNfcWrite(){
-  if(!supported()) return;
-  const ndef = new NDEFReader();
-  const payload = 'NFC_TEST_' + Date.now();
-  setPhase('測試寫入：請把可寫入 NFC Tag 靠近手機 NFC 天線…');
-  log('開始 NFC 最小寫入測試');
+async function start(){
+  if(started){
+    $('#pairArea').hidden=!$('#pairArea').hidden;
+    $('#startBtn').textContent=$('#pairArea').hidden?'展開連線QR':'連線QR收合';
+    return;
+  }
+  if(!window.isSecureContext){
+    alert('相機需要 HTTPS 網址，不能直接用 file:// 開啟。');
+    return;
+  }
+  if(!navigator.mediaDevices?.getUserMedia){
+    alert('此瀏覽器不能使用相機。');return;
+  }
+  started=true;
+  $('#startBtn').textContent='連線QR收合';
+  log('建立雙 WebRTC Offer…');
   try{
-    await ndef.write({
-      records:[{
-        recordType:'text',
-        data:payload,
-        lang:'en',
-        encoding:'utf-8'
-      }]
-    });
-    setPhase('✓ NFC 測試寫入成功');
-    log('NFC TEST WRITE OK: ' + payload);
+    await startCamera();
+    await Promise.all([createOurOffer('A'),createOurOffer('B')]);
+    qrTimer=setInterval(drawNextQR,1000/QR_FPS);
+    scanTimer=setInterval(scanFrame,90); // camera decoding does not need 30 decode attempts/s
+    drawNextQR();
   }catch(e){
-    const detail = `${e.name || 'Error'}: ${e.message || String(e)}`;
-    setPhase('NFC 測試寫入失敗：' + detail);
-    log('NFC TEST WRITE ERROR -> ' + detail);
-    log('環境: secure=' + window.isSecureContext + ', url=' + location.href);
+    started=false;log('啟動失敗：'+e.message);alert('啟動失敗：'+e.message);
   }
 }
 
-function resetAll(){
-  role=null; phase='idle'; session=randomId();
-  localSignal='';localChunks=[];localIndex=0;
-  incoming.clear();incomingType=null;incomingTotal=0;incomingSession=null;
-  if(dc) try{dc.close()}catch{}
-  if(pc) try{pc.close()}catch{}
-  dc=null;pc=null;
-  $('#modeText').textContent='尚未選擇角色';
-  setPhase('待機');
-  setSigProgress(0,0);
-  setRtc('尚未建立');
-  $('#writeBtn').disabled=true;
-  $('#readBtn').disabled=true;
-  $('#fileInput').disabled=true;
-  $('#fileSendBtn').disabled=true;
-  $('#fileBar').style.width='0%';
-  $('#fileText').textContent='DataChannel OPEN 後可使用';
-  log('已重置');
+function primaryDC(){
+  const open=[...links.values()].filter(x=>x.dc&&x.dc.readyState==='open');
+  return open[0]?.dc||null;
+}
+function fmt(n){
+  if(n<1024)return n+' B'; if(n<1048576)return (n/1024).toFixed(1)+' KB';
+  if(n<1073741824)return (n/1048576).toFixed(1)+' MB';return (n/1073741824).toFixed(2)+' GB';
+}
+function addSendRow(name,size){
+  const li=document.createElement('li');li.className='item';
+  li.innerHTML=`<div class="name"></div><div class="progress"><i></i></div><div class="meta"></div>`;
+  li.querySelector('.name').textContent=name;li.querySelector('.meta').textContent=fmt(size);
+  $('#sendList').appendChild(li);return li;
+}
+function addRecvRow(name,size){
+  const li=document.createElement('li');li.className='item';
+  li.innerHTML=`<div class="name"></div><div class="progress"><i></i></div><div class="meta"></div>`;
+  li.querySelector('.name').textContent=name;li.querySelector('.meta').textContent=`0 / ${fmt(size)}`;
+  $('#recvList').appendChild(li);return li;
+}
+function setRow(row,pct,text){
+  row.querySelector('i').style.width=Math.max(0,Math.min(100,pct))+'%';
+  row.querySelector('.meta').textContent=text;
 }
 
-$('#recvBtn').onclick = async()=>{
-  if(!supported()) return;
-  resetAll();
-  role='receiver';
-  $('#modeText').textContent='接收端 / Offerer';
-  $('#readBtn').disabled=true;
-  try{ await createOffer(); }
-  catch(e){ setPhase(`建立 Offer 失敗：${e.message}`); }
-};
+async function sendFiles(files){
+  for(const file of files){
+    const dc=primaryDC();
+    if(!dc){alert('目前沒有可用的 WebRTC DataChannel');return}
+    const id=randomHex(6),row=addSendRow(file.name,file.size);
+    dc.send(JSON.stringify({t:'meta',id,name:file.name,size:file.size,type:file.type}));
+    let pos=0;
+    while(pos<file.size){
+      while(dc.bufferedAmount>3*1024*1024) await new Promise(r=>setTimeout(r,10));
+      const end=Math.min(file.size,pos+FILE_CHUNK);
+      dc.send(await file.slice(pos,end).arrayBuffer());
+      pos=end;setRow(row,pos*100/file.size,`${fmt(pos)} / ${fmt(file.size)}`);
+    }
+    dc.send(JSON.stringify({t:'done',id}));
+    setRow(row,100,`完成 · ${fmt(file.size)}`);
+  }
+}
 
-$('#sendBtn').onclick = ()=>{
-  if(!supported()) return;
-  resetAll();
-  role='sender';
-  $('#modeText').textContent='傳送端 / Answerer';
-  $('#readBtn').disabled=false;
-  setPhase('請先從 NFC Tag 讀取接收端的 Offer 第 1 筆');
-};
+$('#startBtn').addEventListener('click',start);
+$('#addBtn').addEventListener('click',()=>$('#fileInput').click());
+$('#fileInput').addEventListener('change',async e=>{
+  const files=[...e.target.files];e.target.value='';
+  if(files.length) await sendFiles(files);
+});
 
-$('#resetBtn').onclick=resetAll;
-$('#testWriteBtn').onclick=testNfcWrite;
-$('#writeBtn').onclick=writeCurrent;
-$('#readBtn').onclick=readOne;
-$('#fileSendBtn').onclick=sendFile;
-
-resetAll();
+window.addEventListener('beforeunload',()=>{
+  clearInterval(qrTimer);clearInterval(scanTimer);
+  if(stream)stream.getTracks().forEach(t=>t.stop());
+  links.forEach(x=>x.pc.close());
+});
 })();
 </script>
 </body>
