@@ -4,496 +4,754 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>WebRTC傳輸工具</title>
+
+<!-- QR 產生器：只用來在瀏覽器內把 SDP 分片畫成 QR，不是 signaling 伺服器 -->
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+
 <style>
-:root{
-  --bg:#eeeeee;--top:#050505;--text:#050505;--line:#696969;
-  --green:#11ee37;--white:#fff;--muted:#666;
-}
 *{box-sizing:border-box}
-html,body{margin:0;background:var(--bg);color:var(--text);font-family:Arial,"Noto Sans TC",sans-serif}
-body.flash::before{
-  content:"";position:fixed;inset:0;background:rgba(0,255,64,.52);
-  pointer-events:none;z-index:9999;animation:okflash .5s linear 1;
+:root{
+  --bg:#efefef;--panel:#f6f6f6;--line:#666;--text:#050505;
+  --ok:#15ee35;--wait:#777;--blue:#1268e8
 }
-@keyframes okflash{0%{opacity:0}15%{opacity:1}100%{opacity:0}}
-header{
-  height:78px;background:var(--top);color:#fff;display:flex;align-items:center;
-  padding:0 15px;border-bottom:2px solid #999;
+html,body{
+  margin:0;background:var(--bg);color:var(--text);
+  font-family:Arial,"Noto Sans TC","Microsoft JhengHei",sans-serif
 }
-header h1{font-size:29px;font-weight:500;margin:0;white-space:nowrap}
-.lights{margin-left:auto;display:flex;gap:18px;align-items:center}
-.light{
-  width:23px;height:23px;border-radius:50%;background:#777;border:1px solid #333;
+body.connected-flash::after{
+  content:"";position:fixed;inset:0;z-index:99999;pointer-events:none;
+  background:rgba(0,255,55,.58);animation:connectedFlash .5s linear 1
 }
-.light.on{background:var(--green);box-shadow:0 0 8px rgba(0,255,40,.35)}
-main{padding:22px 23px 18px;max-width:760px;margin:auto}
+@keyframes connectedFlash{
+  0%{opacity:0}12%{opacity:1}82%{opacity:.75}100%{opacity:0}
+}
+.top{
+  height:77px;background:#050505;color:#fff;border-bottom:2px solid #999;
+  display:flex;align-items:center;padding:0 15px
+}
+.title{font-size:29px;font-weight:400;white-space:nowrap}
+.dots{margin-left:auto;display:flex;gap:18px}
+.dot{
+  width:23px;height:23px;border-radius:50%;background:#777;
+  border:1px solid #333
+}
+.dot.ok{background:var(--ok);box-shadow:0 0 9px rgba(0,255,50,.5)}
+
+main{max-width:720px;margin:auto;padding:22px 23px 18px}
 button{
-  border:2px solid var(--line);background:#f3f3f3;color:#000;border-radius:12px;
-  min-height:62px;font-size:28px;padding:8px 15px;cursor:pointer;
+  width:100%;border:2px solid var(--line);border-radius:12px;
+  background:#f4f4f4;color:#000;min-height:63px;
+  font-size:28px;padding:8px 12px;cursor:pointer
 }
 button:active{background:#ddd}
-button:disabled{opacity:.45;cursor:not-allowed}
-.full{width:100%}
+button:disabled{opacity:.45}
+
+.connect-wrap{margin-bottom:12px}
 .pair{
-  display:grid;grid-template-columns:1fr 1fr;gap:28px;margin:12px 46px;
+  display:grid;grid-template-columns:1fr 1fr;gap:28px;
+  margin:12px 46px
 }
-.square{
-  position:relative;aspect-ratio:1/1;border:2px solid var(--line);border-radius:37px;
-  background:#f3f3f3;overflow:hidden;min-width:0;
+.box{
+  aspect-ratio:1/1;border:2px solid var(--line);border-radius:37px;
+  position:relative;overflow:hidden;background:#f4f4f4;min-width:0
 }
-.square .label{
+.placeholder{
   position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-  font-size:29px;z-index:3;pointer-events:none;background:rgba(243,243,243,.0)
+  font-size:29px;z-index:1
 }
-#qrCanvas{width:100%;height:100%;display:block;background:#fff}
-#camera{
-  width:100%;height:100%;display:block;object-fit:cover;background:#111;transform:scaleX(-1)
+#qrImage,#camera{
+  position:absolute;inset:0;width:100%;height:100%;display:none
 }
-#qrBox.active .label,#camBox.active .label{display:none}
-.qrtype{
-  position:absolute;left:6px;right:6px;bottom:7px;z-index:4;text-align:center;
-  font-size:13px;font-weight:700;background:rgba(255,255,255,.88);border-radius:7px;padding:3px 5px;
+#qrImage{object-fit:contain;background:white;padding:4px}
+#camera{object-fit:cover;background:#111;transform:scaleX(-1)}
+.overlay{
+  position:absolute;left:7px;right:7px;bottom:7px;z-index:5;
+  border-radius:8px;padding:4px 6px;text-align:center;font-size:12px;
+  background:rgba(255,255,255,.90)
 }
-.camstate{
-  position:absolute;left:6px;right:6px;bottom:7px;z-index:4;text-align:center;
-  font-size:12px;background:rgba(0,0,0,.75);color:#fff;border-radius:7px;padding:4px;
-}
+#scanOverlay{background:rgba(0,0,0,.76);color:#fff}
 .add{margin:12px 0}
-.transfer{
-  display:grid;grid-template-columns:1fr 1fr;border:2px solid var(--line);
-  min-height:370px;background:#f3f3f3
-}
-.column{min-width:0;padding:14px 10px}
-.column+ .column{border-left:2px solid var(--line)}
-.column h2{
-  font-size:28px;font-weight:500;text-align:center;margin:150px 0 18px
-}
-.list{margin:0;padding:0;list-style:none;font-size:14px}
-.item{
-  border-top:1px solid #aaa;padding:8px 4px;display:grid;gap:5px
-}
-.item:first-child{border-top:0}
-.name{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.progress{height:6px;background:#ddd;border-radius:99px;overflow:hidden}
-.progress i{display:block;height:100%;width:0;background:#222}
-.meta{font-size:11px;color:#666}
 #fileInput{display:none}
-.debug{
-  margin-top:10px;font-size:11px;color:#666;line-height:1.45;word-break:break-all
+
+.lists{
+  display:grid;grid-template-columns:1fr 1fr;
+  min-height:370px;border:2px solid var(--line);background:#f4f4f4
 }
-@media(max-width:480px){
- header h1{font-size:23px}
- main{padding:16px 14px}
- .pair{margin:12px 24px;gap:22px}
- button{font-size:23px;min-height:58px}
- .square .label{font-size:25px}
- .transfer{min-height:350px}
- .column h2{font-size:24px;margin-top:145px}
+.col{min-width:0;padding:12px 9px}
+.col+.col{border-left:2px solid var(--line)}
+.col h2{
+  margin:150px 0 18px;text-align:center;font-size:28px;font-weight:400
+}
+ul{list-style:none;padding:0;margin:0}
+.file{
+  padding:8px 2px;border-top:1px solid #aaa;font-size:13px
+}
+.file:first-child{border-top:0}
+.fname{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar{height:6px;background:#d3d3d3;border-radius:20px;overflow:hidden;margin:5px 0}
+.bar span{display:block;width:0;height:100%;background:#222}
+.meta{font-size:11px;color:#666}
+
+.status{
+  margin-top:9px;font-size:11px;line-height:1.45;color:#666;
+  word-break:break-word
+}
+.hidden{display:none!important}
+
+@media(max-width:520px){
+  .title{font-size:23px}
+  main{padding:16px 14px}
+  .pair{gap:22px;margin:12px 24px}
+  .placeholder{font-size:25px}
+  button{font-size:23px;min-height:58px}
+  .lists{min-height:350px}
+  .col h2{font-size:24px;margin-top:145px}
 }
 </style>
 </head>
+
 <body>
-<header>
-  <h1>WebRTC傳輸工具</h1>
-  <div class="lights">
-    <span id="lightA" class="light" title="WebRTC A"></span>
-    <span id="lightB" class="light" title="WebRTC B"></span>
+<header class="top">
+  <div class="title">WebRTC傳輸工具</div>
+  <div class="dots" aria-label="兩條 WebRTC 連線狀態">
+    <span id="dot1" class="dot"></span>
+    <span id="dot2" class="dot"></span>
   </div>
 </header>
 
 <main>
-  <button id="startBtn" class="full">連線QR收合</button>
-
-  <div class="pair" id="pairArea">
-    <div class="square" id="qrBox">
-      <canvas id="qrCanvas"></canvas>
-      <div class="label">QR碼</div>
-      <div id="qrType" class="qrtype" hidden>建立中</div>
-    </div>
-
-    <div class="square" id="camBox">
-      <video id="camera" playsinline muted></video>
-      <div class="label">相機</div>
-      <div id="camState" class="camstate" hidden>待機</div>
-    </div>
+  <div class="connect-wrap">
+    <button id="connectBtn">連線QR收合</button>
   </div>
 
-  <div class="add">
-    <button id="addBtn" class="full" disabled>新增傳輸檔案鍵</button>
-    <input id="fileInput" type="file" multiple>
-  </div>
-
-  <section class="transfer">
-    <div class="column">
-      <h2>傳送列表</h2>
-      <ul id="sendList" class="list"></ul>
+  <section id="pairArea" class="pair">
+    <div class="box">
+      <div id="qrPlaceholder" class="placeholder">QR碼</div>
+      <img id="qrImage" alt="WebRTC signaling QR">
+      <div id="qrOverlay" class="overlay hidden">準備中</div>
     </div>
-    <div class="column">
-      <h2>接收列表</h2>
-      <ul id="recvList" class="list"></ul>
+
+    <div class="box">
+      <div id="camPlaceholder" class="placeholder">相機</div>
+      <video id="camera" playsinline muted autoplay></video>
+      <div id="scanOverlay" class="overlay hidden">尚未掃描</div>
     </div>
   </section>
 
-  <div id="debug" class="debug">未啟動</div>
+  <div class="add">
+    <button id="addFileBtn" disabled>新增傳輸檔案鍵</button>
+    <input id="fileInput" type="file" multiple>
+  </div>
+
+  <section class="lists">
+    <div class="col">
+      <h2>傳送列表</h2>
+      <ul id="sendList"></ul>
+    </div>
+    <div class="col">
+      <h2>接收列表</h2>
+      <ul id="recvList"></ul>
+    </div>
+  </section>
+
+  <div id="status" class="status">尚未啟動</div>
 </main>
 
-<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <script>
 (() => {
 'use strict';
 
-const $ = s => document.querySelector(s);
+const $ = q => document.querySelector(q);
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
-const QR_FPS = 30;
-const QR_PART = 520;
+const QR_HZ = 30;
+const QR_INTERVAL = 1000 / QR_HZ;
+const QR_CHUNK_CHARS = 260;
 const FILE_CHUNK = 32 * 1024;
-const ICE_TIMEOUT = 8000;
-
-const deviceId = randomHex(8);
-const bootId = randomHex(5);
+const deviceId = hex(8);
+const sessionId = hex(6);
 
 let started = false;
-let qrTimer = 0;
-let scanTimer = 0;
+let collapsed = false;
 let stream = null;
-let videoCanvas = document.createElement('canvas');
-let videoCtx = videoCanvas.getContext('2d', {willReadFrequently:true});
+let qrTimer = null;
+let scanBusy = false;
+let scanRAF = null;
+let lastScanAt = 0;
+let flashed = false;
 
-const links = new Map();
-const incomingSignals = new Map();
-const outgoingPackets = [];
-let qrCursor = 0;
-let connectedOnce = false;
+const lanes = {
+  1: makeLane(1),
+  2: makeLane(2)
+};
 
-function rand(n){const a=new Uint8Array(n);crypto.getRandomValues(a);return a}
-function randomHex(n){return [...rand(n)].map(x=>x.toString(16).padStart(2,'0')).join('')}
-function log(s){ $('#debug').textContent = s; }
+const rxSignals = new Map();
 
-function flashGreen(){
-  if(connectedOnce) return;
-  connectedOnce = true;
-  document.body.classList.remove('flash');
-  void document.body.offsetWidth;
-  document.body.classList.add('flash');
-  setTimeout(()=>document.body.classList.remove('flash'),520);
+const scanCanvas = document.createElement('canvas');
+const scanCtx = scanCanvas.getContext('2d',{willReadFrequently:true});
+let detector = null;
+
+function makeLane(id){
+  return {
+    id,
+    offerPc:null,
+    offerDc:null,
+    answerPc:null,
+    answerDc:null,
+    offerPackets:[],
+    answerPackets:[],
+    outputMode:'OFFER',
+    qrIndex:0,
+    connected:false,
+    remoteDevice:null
+  };
 }
 
-function linkLight(id,on){
-  const el = id==='A' ? $('#lightA') : $('#lightB');
-  el.classList.toggle('on', !!on);
-  if(on) flashGreen();
+function hex(n){
+  const a=new Uint8Array(n);
+  crypto.getRandomValues(a);
+  return [...a].map(v=>v.toString(16).padStart(2,'0')).join('');
 }
 
-function makeLink(id){
-  const pc = new RTCPeerConnection({iceServers:[
-    {urls:'stun:stun.l.google.com:19302'},
-    {urls:'stun:stun.cloudflare.com:3478'}
-  ]});
-  const link = {id, pc, dc:null, localType:null, localSdp:null, remoteSet:false, open:false};
-  links.set(id,link);
+function status(s){
+  $('#status').textContent=s;
+}
+
+function setLaneConnected(id){
+  const lane=lanes[id];
+  if(lane.connected) return;
+  lane.connected=true;
+  $('#dot'+id).classList.add('ok');
+  $('#addFileBtn').disabled=false;
+
+  if(!flashed){
+    flashed=true;
+    document.body.classList.remove('connected-flash');
+    void document.body.offsetWidth;
+    document.body.classList.add('connected-flash');
+    setTimeout(()=>document.body.classList.remove('connected-flash'),520);
+  }
+  status(`WebRTC ${id} 已連線`);
+}
+
+function createPc(laneId, kind){
+  const pc=new RTCPeerConnection({
+    iceServers:[
+      {urls:'stun:stun.l.google.com:19302'}
+    ],
+    bundlePolicy:'max-bundle'
+  });
 
   pc.onconnectionstatechange=()=>{
-    log(`${id} ${pc.connectionState}`);
-    if(pc.connectionState==='connected') linkLight(id,true);
-    if(['failed','closed','disconnected'].includes(pc.connectionState) && !link.open) linkLight(id,false);
+    if(pc.connectionState==='connected') setLaneConnected(laneId);
   };
-  pc.ondatachannel=e=>attachDC(link,e.channel);
-  return link;
+  pc.oniceconnectionstatechange=()=>{
+    if(pc.iceConnectionState==='connected' || pc.iceConnectionState==='completed'){
+      setLaneConnected(laneId);
+    }
+  };
+  pc.ondatachannel=e=>{
+    attachDataChannel(laneId,e.channel);
+    if(kind==='answer') lanes[laneId].answerDc=e.channel;
+  };
+
+  return pc;
 }
 
-function attachDC(link,dc){
-  link.dc=dc; dc.binaryType='arraybuffer';
+function attachDataChannel(laneId,dc){
+  dc.binaryType='arraybuffer';
   let rx=null;
 
   dc.onopen=()=>{
-    link.open=true;linkLight(link.id,true);
-    $('#addBtn').disabled=false;
-    log(`WebRTC ${link.id} DataChannel OPEN`);
+    setLaneConnected(laneId);
+    status(`WebRTC ${laneId} DataChannel OPEN`);
   };
-  dc.onclose=()=>{link.open=false; if(![...links.values()].some(x=>x.open&&x.id===link.id)) linkLight(link.id,false)};
-  dc.onerror=()=>log(`WebRTC ${link.id} DataChannel ERROR`);
 
   dc.onmessage=e=>{
     if(typeof e.data==='string'){
-      let m; try{m=JSON.parse(e.data)}catch{return}
+      let m;
+      try{m=JSON.parse(e.data)}catch{return}
+
       if(m.t==='meta'){
-        rx={id:m.id,name:m.name,size:m.size,type:m.type||'',parts:[],bytes:0,row:addRecvRow(m.name,m.size)};
+        rx={
+          id:m.id,name:m.name,size:m.size,type:m.type||'application/octet-stream',
+          bytes:0,parts:[],row:addRow($('#recvList'),m.name,m.size)
+        };
       }else if(m.t==='done' && rx && m.id===rx.id){
-        const blob=new Blob(rx.parts,{type:rx.type||'application/octet-stream'});
+        const blob=new Blob(rx.parts,{type:rx.type});
         const a=document.createElement('a');
-        a.href=URL.createObjectURL(blob);a.download=rx.name;a.click();
+        a.href=URL.createObjectURL(blob);
+        a.download=rx.name;
+        a.click();
         setTimeout(()=>URL.revokeObjectURL(a.href),3000);
         setRow(rx.row,100,`完成 · ${fmt(rx.size)}`);
         rx=null;
       }
       return;
     }
+
     if(rx){
-      rx.parts.push(e.data);rx.bytes+=e.data.byteLength;
-      setRow(rx.row,rx.size?rx.bytes*100/rx.size:0,`${fmt(rx.bytes)} / ${fmt(rx.size)}`);
+      rx.parts.push(e.data);
+      rx.bytes+=e.data.byteLength;
+      setRow(
+        rx.row,
+        rx.size ? rx.bytes*100/rx.size : 0,
+        `${fmt(rx.bytes)} / ${fmt(rx.size)}`
+      );
     }
   };
 }
 
-function waitIce(pc){
-  return new Promise(resolve=>{
-    if(pc.iceGatheringState==='complete') return resolve();
-    const t=setTimeout(()=>{pc.removeEventListener('icegatheringstatechange',f);resolve()},ICE_TIMEOUT);
-    const f=()=>{if(pc.iceGatheringState==='complete'){clearTimeout(t);pc.removeEventListener('icegatheringstatechange',f);resolve()}};
-    pc.addEventListener('icegatheringstatechange',f);
-  });
-}
+async function waitIce(pc){
+  if(pc.iceGatheringState==='complete') return;
 
-async function createOurOffer(id){
-  const link=makeLink(id);
-  const dc=link.pc.createDataChannel('file-'+id,{ordered:true});
-  attachDC(link,dc);
-  const offer=await link.pc.createOffer();
-  await link.pc.setLocalDescription(offer);
-  await waitIce(link.pc);
-  link.localType='offer'; link.localSdp=link.pc.localDescription.sdp;
-  await enqueueSignal(id,'OFFER',link.localSdp);
-}
-
-async function answerRemoteOffer(remoteLinkId, sdp, remoteDevice){
-  // Remote A is answered by our B, remote B by our A.
-  const localId = remoteLinkId==='A' ? 'B' : 'A';
-  let link=links.get(localId);
-
-  // If this local link already has its own offer, keep it for the first connection
-  // and create a dedicated answer lane with matching remote ID namespace.
-  const answerId='R'+remoteLinkId+'-'+remoteDevice.slice(0,4);
-  link=makeLink(answerId);
-
-  await link.pc.setRemoteDescription({type:'offer',sdp});
-  const answer=await link.pc.createAnswer();
-  await link.pc.setLocalDescription(answer);
-  await waitIce(link.pc);
-  link.localType='answer';link.localSdp=link.pc.localDescription.sdp;
-  link.answerFor={remoteDevice,remoteLinkId};
-  await enqueueSignal(remoteLinkId,'ANSWER',link.localSdp,remoteDevice,answerId);
-}
-
-async function applyRemoteAnswer(pkt,sdp){
-  // Answer tells us which original offer lane it answers.
-  const link=links.get(pkt.lane);
-  if(!link || link.remoteSet) return;
-  try{
-    await link.pc.setRemoteDescription({type:'answer',sdp});
-    link.remoteSet=true;
-    log(`Answer 套用：${pkt.lane}`);
-  }catch(e){log(`Answer 套用失敗 ${pkt.lane}: ${e.message}`)}
-}
-
-async function compressText(text){
-  if(!('CompressionStream' in window)) return {z:0,d:b64(enc.encode(text))};
-  const cs=new CompressionStream('deflate');
-  const w=cs.writable.getWriter();
-  w.write(enc.encode(text));w.close();
-  const ab=await new Response(cs.readable).arrayBuffer();
-  return {z:1,d:b64(new Uint8Array(ab))};
-}
-async function decompressText(z,data){
-  const bytes=unb64(data);
-  if(!z) return dec.decode(bytes);
-  const ds=new DecompressionStream('deflate');
-  const w=ds.writable.getWriter();w.write(bytes);w.close();
-  return await new Response(ds.readable).text();
-}
-function b64(bytes){
-  let s=''; for(let i=0;i<bytes.length;i+=0x8000)s+=String.fromCharCode(...bytes.subarray(i,i+0x8000));
-  return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
-}
-function unb64(s){
-  s=s.replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';
-  const b=atob(s),a=new Uint8Array(b.length);for(let i=0;i<b.length;i++)a[i]=b.charCodeAt(i);return a;
-}
-
-async function enqueueSignal(lane,type,sdp,target=null,answerId=null){
-  const packed=await compressText(sdp);
-  const signalId=randomHex(5);
-  const pieces=[];
-  for(let i=0;i<packed.d.length;i+=QR_PART) pieces.push(packed.d.slice(i,i+QR_PART));
-  pieces.forEach((piece,index)=>{
-    outgoingPackets.push({
-      v:2,app:'WRTQ',from:deviceId,boot:bootId,target,
-      sid:signalId,lane,type,z:packed.z,i:index,n:pieces.length,d:piece,
-      aid:answerId||null
-    });
-  });
-  log(`${type} ${lane}: ${pieces.length} QR`);
-}
-
-function isForUs(p){
-  return !p.target || p.target===deviceId;
-}
-async function receivePacket(p){
-  if(!p || p.v!==2 || p.app!=='WRTQ' || p.from===deviceId || !isForUs(p)) return;
-
-  const key=[p.from,p.sid,p.type,p.lane].join('|');
-  let box=incomingSignals.get(key);
-  if(!box){
-    box={n:p.n,z:p.z,parts:new Array(p.n),count:0,p};
-    incomingSignals.set(key,box);
-  }
-  if(!box.parts[p.i]){
-    box.parts[p.i]=p.d;box.count++;
-    $('#camState').textContent=`${p.type} ${box.count}/${box.n}`;
-  }
-  if(box.count===box.n && !box.done){
-    box.done=true;
-    const text=await decompressText(box.z,box.parts.join(''));
-    if(p.type==='OFFER'){
-      $('#camState').textContent=`Offer完成 → Answer`;
-      await answerRemoteOffer(p.lane,text,p.from);
-    }else if(p.type==='ANSWER'){
-      $('#camState').textContent=`Answer完成`;
-      await applyRemoteAnswer(p,text);
+  await new Promise(resolve=>{
+    const timeout=setTimeout(done,9000);
+    function done(){
+      clearTimeout(timeout);
+      pc.removeEventListener('icegatheringstatechange',change);
+      resolve();
     }
+    function change(){
+      if(pc.iceGatheringState==='complete') done();
+    }
+    pc.addEventListener('icegatheringstatechange',change);
+  });
+}
+
+async function createOffer(laneId){
+  const lane=lanes[laneId];
+  const pc=createPc(laneId,'offer');
+  lane.offerPc=pc;
+
+  const dc=pc.createDataChannel('file-'+laneId,{ordered:true});
+  lane.offerDc=dc;
+  attachDataChannel(laneId,dc);
+
+  const offer=await pc.createOffer();
+  await pc.setLocalDescription(offer);
+  await waitIce(pc);
+
+  lane.offerPackets=await signalToPackets({
+    type:'OFFER',
+    lane:laneId,
+    target:null,
+    sdp:pc.localDescription.sdp
+  });
+
+  status(`連線 ${laneId} Offer QR 已生成，共 ${lane.offerPackets.length} 張`);
+}
+
+async function createAnswer(laneId,remoteDevice,sdp){
+  const lane=lanes[laneId];
+
+  if(lane.answerPc){
+    return;
+  }
+
+  lane.remoteDevice=remoteDevice;
+  const pc=createPc(laneId,'answer');
+  lane.answerPc=pc;
+
+  await pc.setRemoteDescription({type:'offer',sdp});
+
+  const answer=await pc.createAnswer();
+  await pc.setLocalDescription(answer);
+  await waitIce(pc);
+
+  lane.answerPackets=await signalToPackets({
+    type:'ANSWER',
+    lane:laneId,
+    target:remoteDevice,
+    sdp:pc.localDescription.sdp
+  });
+
+  // 這就是使用者指定的行為：
+  // 此 lane 一掃完整對方 Offer，這個 lane 的輸出立即從 Offer 改成 Answer。
+  lane.outputMode='ANSWER';
+  lane.qrIndex=0;
+
+  status(`已掃完整對方 Offer ${laneId}，QR ${laneId} 已改為 Answer`);
+}
+
+async function applyAnswer(laneId,sdp){
+  const lane=lanes[laneId];
+  const pc=lane.offerPc;
+
+  if(!pc || pc.currentRemoteDescription) return;
+
+  try{
+    await pc.setRemoteDescription({type:'answer',sdp});
+    status(`連線 ${laneId} Answer 已套用，等待 WebRTC`);
+  }catch(e){
+    status(`Answer ${laneId} 套用失敗：${e.message}`);
   }
 }
 
-async function drawNextQR(){
-  if(!started || !outgoingPackets.length || !window.QRCode) return;
-  // Prefer ANSWER packets after any are available, while still cycling offers.
-  const answers=outgoingPackets.filter(x=>x.type==='ANSWER');
-  const offers=outgoingPackets.filter(x=>x.type==='OFFER');
-  let pool = answers.length ? answers.concat(offers.slice(0,Math.max(1,Math.ceil(offers.length/4)))) : offers;
+async function pack(text){
+  const bytes=enc.encode(text);
+
+  if('CompressionStream' in window){
+    try{
+      const cs=new CompressionStream('deflate');
+      const writer=cs.writable.getWriter();
+      await writer.write(bytes);
+      await writer.close();
+      const packed=new Uint8Array(await new Response(cs.readable).arrayBuffer());
+      return {z:1,data:toB64(packed)};
+    }catch{}
+  }
+
+  return {z:0,data:toB64(bytes)};
+}
+
+async function unpack(z,data){
+  const bytes=fromB64(data);
+
+  if(z && 'DecompressionStream' in window){
+    const ds=new DecompressionStream('deflate');
+    const writer=ds.writable.getWriter();
+    await writer.write(bytes);
+    await writer.close();
+    return await new Response(ds.readable).text();
+  }
+
+  return dec.decode(bytes);
+}
+
+async function signalToPackets({type,lane,target,sdp}){
+  const packed=await pack(sdp);
+  const sid=hex(5);
+  const chunks=[];
+
+  for(let p=0;p<packed.data.length;p+=QR_CHUNK_CHARS){
+    chunks.push(packed.data.slice(p,p+QR_CHUNK_CHARS));
+  }
+
+  const packets=chunks.map((data,i)=>({
+    app:'WQ2',
+    v:2,
+    from:deviceId,
+    session:sessionId,
+    target,
+    lane,
+    type,
+    sid,
+    z:packed.z,
+    i,
+    n:chunks.length,
+    d:data
+  }));
+
+  // 預先把每一張 QR 都生成成圖片。
+  // 輪播時只切 img.src，才能真的做到 30Hz，而不是每幀重新計算 QR。
+  for(const p of packets){
+    p.url=makeQrDataUrl(JSON.stringify(p));
+  }
+
+  return packets;
+}
+
+function makeQrDataUrl(text){
+  if(typeof window.qrcode!=='function'){
+    throw new Error('QR 產生器載入失敗');
+  }
+
+  const qr=window.qrcode(0,'L');
+  qr.addData(text,'Byte');
+  qr.make();
+  return qr.createDataURL(4,2);
+}
+
+function currentQrPool(){
+  const pool=[];
+
+  for(const id of [1,2]){
+    const lane=lanes[id];
+    const packets=
+      lane.outputMode==='ANSWER' && lane.answerPackets.length
+        ? lane.answerPackets
+        : lane.offerPackets;
+
+    for(const p of packets) pool.push(p);
+  }
+
+  return pool;
+}
+
+function tickQr(){
+  const pool=currentQrPool();
   if(!pool.length) return;
-  const p=pool[qrCursor++ % pool.length];
-  const txt=JSON.stringify(p);
-  try{
-    await QRCode.toCanvas($('#qrCanvas'),txt,{
-      errorCorrectionLevel:'L',margin:1,width:420,
-      color:{dark:'#000000',light:'#ffffff'}
-    });
-    $('#qrBox').classList.add('active');
-    $('#qrType').hidden=false;
-    $('#qrType').textContent=`${p.type} ${p.lane} · ${p.i+1}/${p.n} · 30Hz`;
-  }catch(e){log('QR生成失敗：'+e.message)}
+
+  tickQr.index=(tickQr.index||0)%pool.length;
+  const p=pool[tickQr.index++];
+  const img=$('#qrImage');
+
+  img.src=p.url;
+  img.style.display='block';
+  $('#qrPlaceholder').style.display='none';
+  $('#qrOverlay').classList.remove('hidden');
+  $('#qrOverlay').textContent=
+    `${p.type} · 連線${p.lane} · ${p.i+1}/${p.n} · 30Hz`;
 }
 
 async function startCamera(){
   stream=await navigator.mediaDevices.getUserMedia({
-    video:{facingMode:'user',width:{ideal:1280},height:{ideal:720}},
+    video:{
+      facingMode:'user',
+      width:{ideal:1280},
+      height:{ideal:720}
+    },
     audio:false
   });
-  const v=$('#camera');v.srcObject=stream;await v.play();
-  $('#camBox').classList.add('active');$('#camState').hidden=false;$('#camState').textContent='掃描中';
+
+  const v=$('#camera');
+  v.srcObject=stream;
+  await v.play();
+  v.style.display='block';
+  $('#camPlaceholder').style.display='none';
+  $('#scanOverlay').classList.remove('hidden');
+
+  if('BarcodeDetector' in window){
+    detector=new BarcodeDetector({formats:['qr_code']});
+  }
 }
 
-async function scanFrame(){
-  if(!started) return;
-  const v=$('#camera');
-  if(v.readyState<2) return;
-  const w=v.videoWidth,h=v.videoHeight;if(!w||!h)return;
-  const max=720,scale=Math.min(1,max/w);
-  videoCanvas.width=Math.max(1,Math.round(w*scale));
-  videoCanvas.height=Math.max(1,Math.round(h*scale));
-  videoCtx.drawImage(v,0,0,videoCanvas.width,videoCanvas.height);
+async function scanLoop(now){
+  scanRAF=requestAnimationFrame(scanLoop);
+  if(!started || scanBusy) return;
+
+  // QR 顯示為 30Hz；掃描運算控制在約 15Hz，避免手機 GPU/CPU 被吃滿。
+  if(now-lastScanAt<66) return;
+  lastScanAt=now;
+  scanBusy=true;
 
   try{
-    let raw=null;
-    if('BarcodeDetector' in window){
-      if(!scanFrame.detector) scanFrame.detector=new BarcodeDetector({formats:['qr_code']});
-      const list=await scanFrame.detector.detect(videoCanvas);
-      if(list.length) raw=list[0].rawValue;
-    }else if(window.jsQR){
-      const img=videoCtx.getImageData(0,0,videoCanvas.width,videoCanvas.height);
-      const qr=jsQR(img.data,img.width,img.height,{inversionAttempts:'attemptBoth'});
-      if(qr) raw=qr.data;
+    const v=$('#camera');
+    if(v.readyState<2 || !v.videoWidth) return;
+
+    const maxW=720;
+    const scale=Math.min(1,maxW/v.videoWidth);
+    scanCanvas.width=Math.max(1,Math.round(v.videoWidth*scale));
+    scanCanvas.height=Math.max(1,Math.round(v.videoHeight*scale));
+
+    // video 本身只是 CSS 鏡像；canvas 使用原始影像，避免 QR 被真的左右翻轉。
+    scanCtx.drawImage(v,0,0,scanCanvas.width,scanCanvas.height);
+
+    if(detector){
+      const found=await detector.detect(scanCanvas);
+      for(const code of found){
+        if(code.rawValue){
+          await receiveQr(code.rawValue);
+          break;
+        }
+      }
+    }else{
+      $('#scanOverlay').textContent='此瀏覽器沒有 BarcodeDetector';
     }
-    if(raw){
-      let p;try{p=JSON.parse(raw)}catch{return}
-      await receivePacket(p);
-    }
-  }catch(e){}
+  }catch{}
+  finally{
+    scanBusy=false;
+  }
+}
+
+async function receiveQr(raw){
+  let p;
+  try{p=JSON.parse(raw)}catch{return}
+
+  if(
+    p.app!=='WQ2' ||
+    p.v!==2 ||
+    p.from===deviceId ||
+    (p.target && p.target!==deviceId) ||
+    !lanes[p.lane]
+  ) return;
+
+  const key=[p.from,p.type,p.lane,p.sid].join('|');
+
+  let box=rxSignals.get(key);
+  if(!box){
+    box={
+      from:p.from,type:p.type,lane:p.lane,
+      sid:p.sid,z:p.z,n:p.n,
+      pieces:new Array(p.n),count:0,done:false
+    };
+    rxSignals.set(key,box);
+  }
+
+  if(!box.pieces[p.i]){
+    box.pieces[p.i]=p.d;
+    box.count++;
+  }
+
+  $('#scanOverlay').textContent=
+    `辨識 ${p.type} · 連線${p.lane} · ${box.count}/${box.n}`;
+
+  if(box.done || box.count!==box.n) return;
+
+  for(let i=0;i<box.n;i++){
+    if(typeof box.pieces[i]!=='string') return;
+  }
+
+  box.done=true;
+  const sdp=await unpack(box.z,box.pieces.join(''));
+
+  if(box.type==='OFFER'){
+    $('#scanOverlay').textContent=`Offer ${box.lane} 完整 → 建立 Answer`;
+    await createAnswer(box.lane,box.from,sdp);
+  }else{
+    $('#scanOverlay').textContent=`Answer ${box.lane} 完整`;
+    await applyAnswer(box.lane,sdp);
+  }
 }
 
 async function start(){
   if(started){
-    $('#pairArea').hidden=!$('#pairArea').hidden;
-    $('#startBtn').textContent=$('#pairArea').hidden?'展開連線QR':'連線QR收合';
+    collapsed=!collapsed;
+    $('#pairArea').classList.toggle('hidden',collapsed);
+    $('#connectBtn').textContent=collapsed?'連線QR展開':'連線QR收合';
     return;
   }
+
   if(!window.isSecureContext){
-    alert('相機需要 HTTPS 網址，不能直接用 file:// 開啟。');
+    alert('前鏡頭需要 HTTPS。請把 HTML 放到 HTTPS 靜態網站後開啟。');
     return;
   }
-  if(!navigator.mediaDevices?.getUserMedia){
-    alert('此瀏覽器不能使用相機。');return;
+
+  if(typeof window.qrcode!=='function'){
+    alert('QR 產生器載入失敗，請確認網路能載入 jsDelivr。');
+    return;
   }
+
+  if(!navigator.mediaDevices?.getUserMedia){
+    alert('此瀏覽器不能使用相機。');
+    return;
+  }
+
   started=true;
-  $('#startBtn').textContent='連線QR收合';
-  log('建立雙 WebRTC Offer…');
+  $('#connectBtn').textContent='連線QR收合';
+  status('啟動前鏡頭並建立兩組 Offer…');
+
   try{
     await startCamera();
-    await Promise.all([createOurOffer('A'),createOurOffer('B')]);
-    qrTimer=setInterval(drawNextQR,1000/QR_FPS);
-    scanTimer=setInterval(scanFrame,90); // camera decoding does not need 30 decode attempts/s
-    drawNextQR();
+
+    // 先生成第一條，第一條完成就立刻有 QR，不必等兩條都建立完。
+    await createOffer(1);
+    tickQr();
+    qrTimer=setInterval(tickQr,QR_INTERVAL);
+
+    await createOffer(2);
+
+    scanRAF=requestAnimationFrame(scanLoop);
+    status('兩組 Offer QR 已生成，請讓兩台手機前鏡頭互掃');
   }catch(e){
-    started=false;log('啟動失敗：'+e.message);alert('啟動失敗：'+e.message);
+    status('啟動失敗：'+e.message);
+    alert('啟動失敗：'+e.message);
   }
 }
 
-function primaryDC(){
-  const open=[...links.values()].filter(x=>x.dc&&x.dc.readyState==='open');
-  return open[0]?.dc||null;
+function bestDc(){
+  for(const id of [1,2]){
+    const lane=lanes[id];
+    for(const dc of [lane.offerDc,lane.answerDc]){
+      if(dc?.readyState==='open') return dc;
+    }
+  }
+  return null;
 }
+
 function fmt(n){
-  if(n<1024)return n+' B'; if(n<1048576)return (n/1024).toFixed(1)+' KB';
-  if(n<1073741824)return (n/1048576).toFixed(1)+' MB';return (n/1073741824).toFixed(2)+' GB';
+  if(n<1024)return `${n} B`;
+  if(n<1024*1024)return `${(n/1024).toFixed(1)} KB`;
+  if(n<1024*1024*1024)return `${(n/1024/1024).toFixed(1)} MB`;
+  return `${(n/1024/1024/1024).toFixed(2)} GB`;
 }
-function addSendRow(name,size){
-  const li=document.createElement('li');li.className='item';
-  li.innerHTML=`<div class="name"></div><div class="progress"><i></i></div><div class="meta"></div>`;
-  li.querySelector('.name').textContent=name;li.querySelector('.meta').textContent=fmt(size);
-  $('#sendList').appendChild(li);return li;
+
+function addRow(parent,name,size){
+  const li=document.createElement('li');
+  li.className='file';
+
+  const nameEl=document.createElement('div');
+  nameEl.className='fname';
+  nameEl.textContent=name;
+
+  const bar=document.createElement('div');
+  bar.className='bar';
+  const fill=document.createElement('span');
+  bar.appendChild(fill);
+
+  const meta=document.createElement('div');
+  meta.className='meta';
+  meta.textContent=fmt(size);
+
+  li.append(nameEl,bar,meta);
+  parent.appendChild(li);
+  return li;
 }
-function addRecvRow(name,size){
-  const li=document.createElement('li');li.className='item';
-  li.innerHTML=`<div class="name"></div><div class="progress"><i></i></div><div class="meta"></div>`;
-  li.querySelector('.name').textContent=name;li.querySelector('.meta').textContent=`0 / ${fmt(size)}`;
-  $('#recvList').appendChild(li);return li;
-}
+
 function setRow(row,pct,text){
-  row.querySelector('i').style.width=Math.max(0,Math.min(100,pct))+'%';
+  row.querySelector('.bar span').style.width=
+    Math.max(0,Math.min(100,pct))+'%';
   row.querySelector('.meta').textContent=text;
 }
 
 async function sendFiles(files){
   for(const file of files){
-    const dc=primaryDC();
-    if(!dc){alert('目前沒有可用的 WebRTC DataChannel');return}
-    const id=randomHex(6),row=addSendRow(file.name,file.size);
-    dc.send(JSON.stringify({t:'meta',id,name:file.name,size:file.size,type:file.type}));
-    let pos=0;
-    while(pos<file.size){
-      while(dc.bufferedAmount>3*1024*1024) await new Promise(r=>setTimeout(r,10));
-      const end=Math.min(file.size,pos+FILE_CHUNK);
-      dc.send(await file.slice(pos,end).arrayBuffer());
-      pos=end;setRow(row,pos*100/file.size,`${fmt(pos)} / ${fmt(file.size)}`);
+    const dc=bestDc();
+    if(!dc){
+      alert('目前沒有已連線的 WebRTC DataChannel');
+      return;
     }
+
+    const id=hex(6);
+    const row=addRow($('#sendList'),file.name,file.size);
+
+    dc.send(JSON.stringify({
+      t:'meta',id,name:file.name,size:file.size,type:file.type
+    }));
+
+    let pos=0;
+
+    while(pos<file.size){
+      while(dc.bufferedAmount>4*1024*1024){
+        await new Promise(r=>setTimeout(r,10));
+      }
+
+      const end=Math.min(file.size,pos+FILE_CHUNK);
+      const buf=await file.slice(pos,end).arrayBuffer();
+      dc.send(buf);
+      pos=end;
+
+      setRow(
+        row,
+        file.size ? pos*100/file.size : 100,
+        `${fmt(pos)} / ${fmt(file.size)}`
+      );
+    }
+
     dc.send(JSON.stringify({t:'done',id}));
     setRow(row,100,`完成 · ${fmt(file.size)}`);
   }
 }
 
-$('#startBtn').addEventListener('click',start);
-$('#addBtn').addEventListener('click',()=>$('#fileInput').click());
+$('#connectBtn').addEventListener('click',start);
+$('#addFileBtn').addEventListener('click',()=>$('#fileInput').click());
 $('#fileInput').addEventListener('change',async e=>{
-  const files=[...e.target.files];e.target.value='';
+  const files=[...e.target.files];
+  e.target.value='';
   if(files.length) await sendFiles(files);
 });
 
 window.addEventListener('beforeunload',()=>{
-  clearInterval(qrTimer);clearInterval(scanTimer);
-  if(stream)stream.getTracks().forEach(t=>t.stop());
-  links.forEach(x=>x.pc.close());
+  if(qrTimer) clearInterval(qrTimer);
+  if(scanRAF) cancelAnimationFrame(scanRAF);
+  if(stream) stream.getTracks().forEach(t=>t.stop());
+
+  for(const id of [1,2]){
+    try{lanes[id].offerPc?.close()}catch{}
+    try{lanes[id].answerPc?.close()}catch{}
+  }
 });
 })();
 </script>
