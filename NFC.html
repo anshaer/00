@@ -5,103 +5,81 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>WebRTC傳輸工具</title>
 
-<!-- QR 產生器：只用來在瀏覽器內把 SDP 分片畫成 QR，不是 signaling 伺服器 -->
-<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+<!-- 僅 QR 編碼器；不參與 signaling / 傳檔 -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 
 <style>
 *{box-sizing:border-box}
-:root{
-  --bg:#efefef;--panel:#f6f6f6;--line:#666;--text:#050505;
-  --ok:#15ee35;--wait:#777;--blue:#1268e8
+html,body{margin:0;background:#efefef;color:#000;font-family:Arial,"Microsoft JhengHei",sans-serif}
+body.flash::after{
+  content:"";position:fixed;inset:0;pointer-events:none;z-index:99999;
+  background:rgba(0,255,48,.60);animation:f .5s linear 1
 }
-html,body{
-  margin:0;background:var(--bg);color:var(--text);
-  font-family:Arial,"Noto Sans TC","Microsoft JhengHei",sans-serif
-}
-body.connected-flash::after{
-  content:"";position:fixed;inset:0;z-index:99999;pointer-events:none;
-  background:rgba(0,255,55,.58);animation:connectedFlash .5s linear 1
-}
-@keyframes connectedFlash{
-  0%{opacity:0}12%{opacity:1}82%{opacity:.75}100%{opacity:0}
-}
-.top{
-  height:77px;background:#050505;color:#fff;border-bottom:2px solid #999;
-  display:flex;align-items:center;padding:0 15px
-}
-.title{font-size:29px;font-weight:400;white-space:nowrap}
-.dots{margin-left:auto;display:flex;gap:18px}
-.dot{
-  width:23px;height:23px;border-radius:50%;background:#777;
-  border:1px solid #333
-}
-.dot.ok{background:var(--ok);box-shadow:0 0 9px rgba(0,255,50,.5)}
+@keyframes f{0%{opacity:0}10%{opacity:1}85%{opacity:.8}100%{opacity:0}}
 
-main{max-width:720px;margin:auto;padding:22px 23px 18px}
+header{
+  height:78px;background:#050505;color:white;display:flex;align-items:center;
+  padding:0 15px;border-bottom:2px solid #999
+}
+header .title{font-size:29px;font-weight:400}
+.lights{margin-left:auto;display:flex;gap:18px}
+.light{width:23px;height:23px;border-radius:50%;background:#777;border:1px solid #333}
+.light.ok{background:#15ee35;box-shadow:0 0 8px rgba(0,255,60,.5)}
+
+main{max-width:760px;margin:auto;padding:22px 23px 18px}
 button{
-  width:100%;border:2px solid var(--line);border-radius:12px;
-  background:#f4f4f4;color:#000;min-height:63px;
-  font-size:28px;padding:8px 12px;cursor:pointer
+  width:100%;min-height:63px;border:2px solid #666;border-radius:12px;
+  background:#f4f4f4;color:#000;font-size:28px;padding:8px 12px;cursor:pointer
 }
 button:active{background:#ddd}
 button:disabled{opacity:.45}
+#connectBtn{margin-bottom:12px}
 
-.connect-wrap{margin-bottom:12px}
-.pair{
-  display:grid;grid-template-columns:1fr 1fr;gap:28px;
-  margin:12px 46px
-}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:28px;margin:12px 46px}
 .box{
-  aspect-ratio:1/1;border:2px solid var(--line);border-radius:37px;
-  position:relative;overflow:hidden;background:#f4f4f4;min-width:0
+  position:relative;aspect-ratio:1/1;border:2px solid #666;border-radius:37px;
+  overflow:hidden;background:#f4f4f4
 }
 .placeholder{
   position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
   font-size:29px;z-index:1
 }
-#qrImage,#camera{
-  position:absolute;inset:0;width:100%;height:100%;display:none
+#qrImg,#cam{
+  display:none;position:absolute;inset:0;width:100%;height:100%
 }
-#qrImage{object-fit:contain;background:white;padding:4px}
-#camera{object-fit:cover;background:#111;transform:scaleX(-1)}
-.overlay{
+#qrImg{object-fit:contain;background:#fff;padding:4px}
+#cam{object-fit:cover;background:#111;transform:scaleX(-1)}
+.badge{
   position:absolute;left:7px;right:7px;bottom:7px;z-index:5;
   border-radius:8px;padding:4px 6px;text-align:center;font-size:12px;
-  background:rgba(255,255,255,.90)
+  background:rgba(255,255,255,.92)
 }
-#scanOverlay{background:rgba(0,0,0,.76);color:#fff}
-.add{margin:12px 0}
+#scanBadge{background:rgba(0,0,0,.76);color:white}
+.hidden{display:none!important}
+
+#addBtn{margin:12px 0}
 #fileInput{display:none}
 
 .lists{
-  display:grid;grid-template-columns:1fr 1fr;
-  min-height:370px;border:2px solid var(--line);background:#f4f4f4
+  display:grid;grid-template-columns:1fr 1fr;border:2px solid #666;
+  min-height:370px;background:#f4f4f4
 }
-.col{min-width:0;padding:12px 9px}
-.col+.col{border-left:2px solid var(--line)}
-.col h2{
-  margin:150px 0 18px;text-align:center;font-size:28px;font-weight:400
-}
+.col{padding:12px 9px;min-width:0}
+.col+.col{border-left:2px solid #666}
+.col h2{text-align:center;font-size:28px;font-weight:400;margin:150px 0 18px}
 ul{list-style:none;padding:0;margin:0}
-.file{
-  padding:8px 2px;border-top:1px solid #aaa;font-size:13px
-}
+.file{padding:8px 2px;border-top:1px solid #aaa;font-size:13px}
 .file:first-child{border-top:0}
-.fname{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.bar{height:6px;background:#d3d3d3;border-radius:20px;overflow:hidden;margin:5px 0}
+.name{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar{height:6px;background:#d2d2d2;border-radius:20px;overflow:hidden;margin:5px 0}
 .bar span{display:block;width:0;height:100%;background:#222}
 .meta{font-size:11px;color:#666}
-
-.status{
-  margin-top:9px;font-size:11px;line-height:1.45;color:#666;
-  word-break:break-word
-}
-.hidden{display:none!important}
+#status{margin-top:9px;font-size:11px;line-height:1.5;color:#666;word-break:break-all}
 
 @media(max-width:520px){
-  .title{font-size:23px}
+  header .title{font-size:23px}
   main{padding:16px 14px}
-  .pair{gap:22px;margin:12px 24px}
+  .pair{margin:12px 24px;gap:22px}
   .placeholder{font-size:25px}
   button{font-size:23px;min-height:58px}
   .lists{min-height:350px}
@@ -111,37 +89,33 @@ ul{list-style:none;padding:0;margin:0}
 </head>
 
 <body>
-<header class="top">
+<header>
   <div class="title">WebRTC傳輸工具</div>
-  <div class="dots" aria-label="兩條 WebRTC 連線狀態">
-    <span id="dot1" class="dot"></span>
-    <span id="dot2" class="dot"></span>
+  <div class="lights">
+    <span id="light1" class="light"></span>
+    <span id="light2" class="light"></span>
   </div>
 </header>
 
 <main>
-  <div class="connect-wrap">
-    <button id="connectBtn">連線QR收合</button>
-  </div>
+  <button id="connectBtn">連線QR收合</button>
 
-  <section id="pairArea" class="pair">
+  <section id="pair" class="pair">
     <div class="box">
       <div id="qrPlaceholder" class="placeholder">QR碼</div>
-      <img id="qrImage" alt="WebRTC signaling QR">
-      <div id="qrOverlay" class="overlay hidden">準備中</div>
+      <img id="qrImg" alt="WebRTC QR">
+      <div id="qrBadge" class="badge hidden">建立中</div>
     </div>
 
-    <div class="box">
+    <div class="box" id="cameraBox">
       <div id="camPlaceholder" class="placeholder">相機</div>
-      <video id="camera" playsinline muted autoplay></video>
-      <div id="scanOverlay" class="overlay hidden">尚未掃描</div>
+      <video id="cam" playsinline autoplay muted></video>
+      <div id="scanBadge" class="badge hidden">點一下相機啟動</div>
     </div>
   </section>
 
-  <div class="add">
-    <button id="addFileBtn" disabled>新增傳輸檔案鍵</button>
-    <input id="fileInput" type="file" multiple>
-  </div>
+  <button id="addBtn" disabled>新增傳輸檔案鍵</button>
+  <input id="fileInput" type="file" multiple>
 
   <section class="lists">
     <div class="col">
@@ -154,131 +128,150 @@ ul{list-style:none;padding:0;margin:0}
     </div>
   </section>
 
-  <div id="status" class="status">尚未啟動</div>
+  <div id="status">初始化…</div>
 </main>
 
 <script>
 (() => {
 'use strict';
 
-const $ = q => document.querySelector(q);
-const enc = new TextEncoder();
-const dec = new TextDecoder();
+const $=s=>document.querySelector(s);
+const enc=new TextEncoder();
+const dec=new TextDecoder();
 
-const QR_HZ = 30;
-const QR_INTERVAL = 1000 / QR_HZ;
-const QR_CHUNK_CHARS = 260;
-const FILE_CHUNK = 32 * 1024;
-const deviceId = hex(8);
-const sessionId = hex(6);
+const QR_HZ=30;
+const QR_PART=240;
+const FILE_PART=32*1024;
+const devId=randomHex(8);
 
-let started = false;
-let collapsed = false;
-let stream = null;
-let qrTimer = null;
-let scanBusy = false;
-let scanRAF = null;
-let lastScanAt = 0;
-let flashed = false;
+let qrFrames=[];
+let qrPos=0;
+let qrTimer=null;
+let stream=null;
+let scanRAF=null;
+let scanBusy=false;
+let detector=null;
+let flashed=false;
+let pairCollapsed=false;
 
-const lanes = {
-  1: makeLane(1),
-  2: makeLane(2)
+const rxSignal=new Map();
+
+const lanes={
+  1:{id:1,offerPc:null,offerDc:null,answerPc:null,answerDc:null,offerFrames:[],answerFrames:[],mode:'OFFER',connected:false},
+  2:{id:2,offerPc:null,offerDc:null,answerPc:null,answerDc:null,offerFrames:[],answerFrames:[],mode:'OFFER',connected:false}
 };
 
-const rxSignals = new Map();
+const cv=document.createElement('canvas');
+const cx=cv.getContext('2d',{willReadFrequently:true});
 
-const scanCanvas = document.createElement('canvas');
-const scanCtx = scanCanvas.getContext('2d',{willReadFrequently:true});
-let detector = null;
-
-function makeLane(id){
-  return {
-    id,
-    offerPc:null,
-    offerDc:null,
-    answerPc:null,
-    answerDc:null,
-    offerPackets:[],
-    answerPackets:[],
-    outputMode:'OFFER',
-    qrIndex:0,
-    connected:false,
-    remoteDevice:null
-  };
+function randomHex(n){
+  const a=new Uint8Array(n);crypto.getRandomValues(a);
+  return [...a].map(x=>x.toString(16).padStart(2,'0')).join('');
+}
+function setStatus(s){$('#status').textContent=s}
+function flash(){
+  if(flashed)return;
+  flashed=true;
+  document.body.classList.remove('flash');
+  void document.body.offsetWidth;
+  document.body.classList.add('flash');
+  setTimeout(()=>document.body.classList.remove('flash'),520);
+}
+function connected(id){
+  if(lanes[id].connected)return;
+  lanes[id].connected=true;
+  $('#light'+id).classList.add('ok');
+  $('#addBtn').disabled=false;
+  flash();
+  setStatus(`WebRTC ${id} 已連線`);
 }
 
-function hex(n){
-  const a=new Uint8Array(n);
-  crypto.getRandomValues(a);
-  return [...a].map(v=>v.toString(16).padStart(2,'0')).join('');
-}
-
-function status(s){
-  $('#status').textContent=s;
-}
-
-function setLaneConnected(id){
-  const lane=lanes[id];
-  if(lane.connected) return;
-  lane.connected=true;
-  $('#dot'+id).classList.add('ok');
-  $('#addFileBtn').disabled=false;
-
-  if(!flashed){
-    flashed=true;
-    document.body.classList.remove('connected-flash');
-    void document.body.offsetWidth;
-    document.body.classList.add('connected-flash');
-    setTimeout(()=>document.body.classList.remove('connected-flash'),520);
+function qrData(text){
+  if(typeof window.qrcode!=='function'){
+    throw new Error('QR library 未載入');
   }
-  status(`WebRTC ${id} 已連線`);
+  const q=window.qrcode(0,'L');
+  q.addData(text,'Byte');
+  q.make();
+  return q.createDataURL(4,2);
 }
 
-function createPc(laneId, kind){
+function showImmediateQr(){
+  try{
+    const boot={
+      app:'WQ3',v:3,type:'BOOT',from:devId,
+      text:'WebRTC QR 初始化'
+    };
+    $('#qrImg').src=qrData(JSON.stringify(boot));
+    $('#qrImg').style.display='block';
+    $('#qrPlaceholder').style.display='none';
+    $('#qrBadge').classList.remove('hidden');
+    $('#qrBadge').textContent='QR正常 · 正在建立Offer';
+    setStatus('QR 產生器正常，正在建立 WebRTC Offer…');
+  }catch(e){
+    $('#qrBadge').classList.remove('hidden');
+    $('#qrBadge').textContent='QR產生器載入失敗';
+    setStatus('QR library 錯誤：'+e.message);
+  }
+}
+
+function rebuildFramePool(){
+  qrFrames=[];
+  for(const id of [1,2]){
+    const lane=lanes[id];
+    const source=
+      lane.mode==='ANSWER' && lane.answerFrames.length
+      ? lane.answerFrames
+      : lane.offerFrames;
+    qrFrames.push(...source);
+  }
+  qrPos=0;
+}
+
+function startQrLoop(){
+  if(qrTimer)return;
+  qrTimer=setInterval(()=>{
+    if(!qrFrames.length)return;
+    const f=qrFrames[qrPos++ % qrFrames.length];
+    $('#qrImg').src=f.url;
+    $('#qrBadge').textContent=`${f.type} · 連線${f.lane} · ${f.i+1}/${f.n} · 30Hz`;
+  },1000/QR_HZ);
+}
+
+function makePc(laneId,kind){
   const pc=new RTCPeerConnection({
-    iceServers:[
-      {urls:'stun:stun.l.google.com:19302'}
-    ],
-    bundlePolicy:'max-bundle'
+    iceServers:[{urls:'stun:stun.l.google.com:19302'}]
   });
 
   pc.onconnectionstatechange=()=>{
-    if(pc.connectionState==='connected') setLaneConnected(laneId);
+    if(pc.connectionState==='connected')connected(laneId);
   };
   pc.oniceconnectionstatechange=()=>{
-    if(pc.iceConnectionState==='connected' || pc.iceConnectionState==='completed'){
-      setLaneConnected(laneId);
-    }
+    if(pc.iceConnectionState==='connected'||pc.iceConnectionState==='completed')connected(laneId);
   };
   pc.ondatachannel=e=>{
-    attachDataChannel(laneId,e.channel);
-    if(kind==='answer') lanes[laneId].answerDc=e.channel;
+    attachDc(laneId,e.channel);
+    if(kind==='answer')lanes[laneId].answerDc=e.channel;
   };
-
   return pc;
 }
 
-function attachDataChannel(laneId,dc){
+function attachDc(laneId,dc){
   dc.binaryType='arraybuffer';
   let rx=null;
 
-  dc.onopen=()=>{
-    setLaneConnected(laneId);
-    status(`WebRTC ${laneId} DataChannel OPEN`);
-  };
+  dc.onopen=()=>connected(laneId);
 
   dc.onmessage=e=>{
     if(typeof e.data==='string'){
       let m;
       try{m=JSON.parse(e.data)}catch{return}
-
       if(m.t==='meta'){
         rx={
           id:m.id,name:m.name,size:m.size,type:m.type||'application/octet-stream',
-          bytes:0,parts:[],row:addRow($('#recvList'),m.name,m.size)
+          parts:[],bytes:0,row:addRow($('#recvList'),m.name,m.size)
         };
-      }else if(m.t==='done' && rx && m.id===rx.id){
+      }else if(m.t==='done'&&rx&&m.id===rx.id){
         const blob=new Blob(rx.parts,{type:rx.type});
         const a=document.createElement('a');
         a.href=URL.createObjectURL(blob);
@@ -294,402 +287,278 @@ function attachDataChannel(laneId,dc){
     if(rx){
       rx.parts.push(e.data);
       rx.bytes+=e.data.byteLength;
-      setRow(
-        rx.row,
-        rx.size ? rx.bytes*100/rx.size : 0,
-        `${fmt(rx.bytes)} / ${fmt(rx.size)}`
-      );
+      setRow(rx.row,rx.size?rx.bytes*100/rx.size:0,`${fmt(rx.bytes)} / ${fmt(rx.size)}`);
     }
   };
 }
 
-async function waitIce(pc){
-  if(pc.iceGatheringState==='complete') return;
-
+async function waitIce(pc,maxMs=3500){
+  if(pc.iceGatheringState==='complete')return;
   await new Promise(resolve=>{
-    const timeout=setTimeout(done,9000);
-    function done(){
-      clearTimeout(timeout);
-      pc.removeEventListener('icegatheringstatechange',change);
+    let done=false;
+    const finish=()=>{
+      if(done)return;
+      done=true;
+      clearTimeout(timer);
+      pc.removeEventListener('icegatheringstatechange',onchange);
       resolve();
-    }
-    function change(){
-      if(pc.iceGatheringState==='complete') done();
-    }
-    pc.addEventListener('icegatheringstatechange',change);
+    };
+    const onchange=()=>{
+      if(pc.iceGatheringState==='complete')finish();
+    };
+    const timer=setTimeout(finish,maxMs);
+    pc.addEventListener('icegatheringstatechange',onchange);
   });
 }
 
-async function createOffer(laneId){
-  const lane=lanes[laneId];
-  const pc=createPc(laneId,'offer');
+async function createOffer(id){
+  const lane=lanes[id];
+  const pc=makePc(id,'offer');
   lane.offerPc=pc;
 
-  const dc=pc.createDataChannel('file-'+laneId,{ordered:true});
+  const dc=pc.createDataChannel('file-'+id,{ordered:true});
   lane.offerDc=dc;
-  attachDataChannel(laneId,dc);
+  attachDc(id,dc);
 
   const offer=await pc.createOffer();
   await pc.setLocalDescription(offer);
-  await waitIce(pc);
 
-  lane.offerPackets=await signalToPackets({
-    type:'OFFER',
-    lane:laneId,
-    target:null,
-    sdp:pc.localDescription.sdp
-  });
+  // 不再無限等 ICE；最多 3.5 秒就先把目前 SDP 做成 QR。
+  await waitIce(pc,3500);
 
-  status(`連線 ${laneId} Offer QR 已生成，共 ${lane.offerPackets.length} 張`);
+  lane.offerFrames=await makeSignalFrames('OFFER',id,null,pc.localDescription.sdp);
+  rebuildFramePool();
+  startQrLoop();
+
+  setStatus(`Offer ${id} QR 已生成：${lane.offerFrames.length} 張`);
 }
 
-async function createAnswer(laneId,remoteDevice,sdp){
-  const lane=lanes[laneId];
+async function makeSignalFrames(type,lane,target,sdp){
+  const packed=await compress(sdp);
+  const sid=randomHex(5);
+  const chunks=[];
 
-  if(lane.answerPc){
-    return;
+  for(let p=0;p<packed.data.length;p+=QR_PART){
+    chunks.push(packed.data.slice(p,p+QR_PART));
   }
 
-  lane.remoteDevice=remoteDevice;
-  const pc=createPc(laneId,'answer');
+  return chunks.map((d,i)=>{
+    const obj={
+      app:'WQ3',v:3,from:devId,target,
+      type,lane,sid,z:packed.z,i,n:chunks.length,d
+    };
+    return {...obj,url:qrData(JSON.stringify(obj))};
+  });
+}
+
+async function compress(text){
+  const bytes=enc.encode(text);
+  if('CompressionStream'in window){
+    try{
+      const cs=new CompressionStream('deflate');
+      const w=cs.writable.getWriter();
+      await w.write(bytes);await w.close();
+      const a=new Uint8Array(await new Response(cs.readable).arrayBuffer());
+      return {z:1,data:b64(a)};
+    }catch{}
+  }
+  return {z:0,data:b64(bytes)};
+}
+
+async function uncompress(z,s){
+  const bytes=unb64(s);
+  if(z&&'DecompressionStream'in window){
+    const ds=new DecompressionStream('deflate');
+    const w=ds.writable.getWriter();
+    await w.write(bytes);await w.close();
+    return await new Response(ds.readable).text();
+  }
+  return dec.decode(bytes);
+}
+
+function b64(a){
+  let s='';
+  for(let i=0;i<a.length;i+=8192){
+    s+=String.fromCharCode(...a.subarray(i,i+8192));
+  }
+  return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+function unb64(s){
+  s=s.replace(/-/g,'+').replace(/_/g,'/');
+  while(s.length%4)s+='=';
+  const x=atob(s),a=new Uint8Array(x.length);
+  for(let i=0;i<x.length;i++)a[i]=x.charCodeAt(i);
+  return a;
+}
+
+async function createAnswer(laneId,remote,sdp){
+  const lane=lanes[laneId];
+  if(lane.answerPc)return;
+
+  const pc=makePc(laneId,'answer');
   lane.answerPc=pc;
 
   await pc.setRemoteDescription({type:'offer',sdp});
+  const ans=await pc.createAnswer();
+  await pc.setLocalDescription(ans);
+  await waitIce(pc,3500);
 
-  const answer=await pc.createAnswer();
-  await pc.setLocalDescription(answer);
-  await waitIce(pc);
+  lane.answerFrames=await makeSignalFrames(
+    'ANSWER',laneId,remote,pc.localDescription.sdp
+  );
 
-  lane.answerPackets=await signalToPackets({
-    type:'ANSWER',
-    lane:laneId,
-    target:remoteDevice,
-    sdp:pc.localDescription.sdp
-  });
+  // 掃完 Offer 後，該條本機 QR 立即切換成 Answer。
+  lane.mode='ANSWER';
+  rebuildFramePool();
 
-  // 這就是使用者指定的行為：
-  // 此 lane 一掃完整對方 Offer，這個 lane 的輸出立即從 Offer 改成 Answer。
-  lane.outputMode='ANSWER';
-  lane.qrIndex=0;
-
-  status(`已掃完整對方 Offer ${laneId}，QR ${laneId} 已改為 Answer`);
+  setStatus(`Offer ${laneId} 掃描完成 → QR 已切換 Answer`);
 }
 
 async function applyAnswer(laneId,sdp){
   const lane=lanes[laneId];
-  const pc=lane.offerPc;
-
-  if(!pc || pc.currentRemoteDescription) return;
+  if(!lane.offerPc||lane.offerPc.currentRemoteDescription)return;
 
   try{
-    await pc.setRemoteDescription({type:'answer',sdp});
-    status(`連線 ${laneId} Answer 已套用，等待 WebRTC`);
+    await lane.offerPc.setRemoteDescription({type:'answer',sdp});
+    setStatus(`Answer ${laneId} 已套用，等待 WebRTC`);
   }catch(e){
-    status(`Answer ${laneId} 套用失敗：${e.message}`);
+    setStatus(`Answer ${laneId} 錯誤：${e.message}`);
   }
 }
 
-async function pack(text){
-  const bytes=enc.encode(text);
-
-  if('CompressionStream' in window){
-    try{
-      const cs=new CompressionStream('deflate');
-      const writer=cs.writable.getWriter();
-      await writer.write(bytes);
-      await writer.close();
-      const packed=new Uint8Array(await new Response(cs.readable).arrayBuffer());
-      return {z:1,data:toB64(packed)};
-    }catch{}
-  }
-
-  return {z:0,data:toB64(bytes)};
-}
-
-async function unpack(z,data){
-  const bytes=fromB64(data);
-
-  if(z && 'DecompressionStream' in window){
-    const ds=new DecompressionStream('deflate');
-    const writer=ds.writable.getWriter();
-    await writer.write(bytes);
-    await writer.close();
-    return await new Response(ds.readable).text();
-  }
-
-  return dec.decode(bytes);
-}
-
-async function signalToPackets({type,lane,target,sdp}){
-  const packed=await pack(sdp);
-  const sid=hex(5);
-  const chunks=[];
-
-  for(let p=0;p<packed.data.length;p+=QR_CHUNK_CHARS){
-    chunks.push(packed.data.slice(p,p+QR_CHUNK_CHARS));
-  }
-
-  const packets=chunks.map((data,i)=>({
-    app:'WQ2',
-    v:2,
-    from:deviceId,
-    session:sessionId,
-    target,
-    lane,
-    type,
-    sid,
-    z:packed.z,
-    i,
-    n:chunks.length,
-    d:data
-  }));
-
-  // 預先把每一張 QR 都生成成圖片。
-  // 輪播時只切 img.src，才能真的做到 30Hz，而不是每幀重新計算 QR。
-  for(const p of packets){
-    p.url=makeQrDataUrl(JSON.stringify(p));
-  }
-
-  return packets;
-}
-
-function makeQrDataUrl(text){
-  if(typeof window.qrcode!=='function'){
-    throw new Error('QR 產生器載入失敗');
-  }
-
-  const qr=window.qrcode(0,'L');
-  qr.addData(text,'Byte');
-  qr.make();
-  return qr.createDataURL(4,2);
-}
-
-function currentQrPool(){
-  const pool=[];
-
-  for(const id of [1,2]){
-    const lane=lanes[id];
-    const packets=
-      lane.outputMode==='ANSWER' && lane.answerPackets.length
-        ? lane.answerPackets
-        : lane.offerPackets;
-
-    for(const p of packets) pool.push(p);
-  }
-
-  return pool;
-}
-
-function tickQr(){
-  const pool=currentQrPool();
-  if(!pool.length) return;
-
-  tickQr.index=(tickQr.index||0)%pool.length;
-  const p=pool[tickQr.index++];
-  const img=$('#qrImage');
-
-  img.src=p.url;
-  img.style.display='block';
-  $('#qrPlaceholder').style.display='none';
-  $('#qrOverlay').classList.remove('hidden');
-  $('#qrOverlay').textContent=
-    `${p.type} · 連線${p.lane} · ${p.i+1}/${p.n} · 30Hz`;
-}
-
-async function startCamera(){
-  stream=await navigator.mediaDevices.getUserMedia({
-    video:{
-      facingMode:'user',
-      width:{ideal:1280},
-      height:{ideal:720}
-    },
-    audio:false
-  });
-
-  const v=$('#camera');
-  v.srcObject=stream;
-  await v.play();
-  v.style.display='block';
-  $('#camPlaceholder').style.display='none';
-  $('#scanOverlay').classList.remove('hidden');
-
-  if('BarcodeDetector' in window){
-    detector=new BarcodeDetector({formats:['qr_code']});
-  }
-}
-
-async function scanLoop(now){
-  scanRAF=requestAnimationFrame(scanLoop);
-  if(!started || scanBusy) return;
-
-  // QR 顯示為 30Hz；掃描運算控制在約 15Hz，避免手機 GPU/CPU 被吃滿。
-  if(now-lastScanAt<66) return;
-  lastScanAt=now;
-  scanBusy=true;
-
-  try{
-    const v=$('#camera');
-    if(v.readyState<2 || !v.videoWidth) return;
-
-    const maxW=720;
-    const scale=Math.min(1,maxW/v.videoWidth);
-    scanCanvas.width=Math.max(1,Math.round(v.videoWidth*scale));
-    scanCanvas.height=Math.max(1,Math.round(v.videoHeight*scale));
-
-    // video 本身只是 CSS 鏡像；canvas 使用原始影像，避免 QR 被真的左右翻轉。
-    scanCtx.drawImage(v,0,0,scanCanvas.width,scanCanvas.height);
-
-    if(detector){
-      const found=await detector.detect(scanCanvas);
-      for(const code of found){
-        if(code.rawValue){
-          await receiveQr(code.rawValue);
-          break;
-        }
-      }
-    }else{
-      $('#scanOverlay').textContent='此瀏覽器沒有 BarcodeDetector';
-    }
-  }catch{}
-  finally{
-    scanBusy=false;
-  }
-}
-
-async function receiveQr(raw){
+async function receivePacket(raw){
   let p;
   try{p=JSON.parse(raw)}catch{return}
 
   if(
-    p.app!=='WQ2' ||
-    p.v!==2 ||
-    p.from===deviceId ||
-    (p.target && p.target!==deviceId) ||
+    p.app!=='WQ3'||p.v!==3||
+    p.type==='BOOT'||p.from===devId||
+    (p.target&&p.target!==devId)||
     !lanes[p.lane]
-  ) return;
+  )return;
 
   const key=[p.from,p.type,p.lane,p.sid].join('|');
+  let box=rxSignal.get(key);
 
-  let box=rxSignals.get(key);
   if(!box){
-    box={
-      from:p.from,type:p.type,lane:p.lane,
-      sid:p.sid,z:p.z,n:p.n,
-      pieces:new Array(p.n),count:0,done:false
-    };
-    rxSignals.set(key,box);
+    box={p,n:p.n,z:p.z,count:0,parts:new Array(p.n),done:false};
+    rxSignal.set(key,box);
   }
 
-  if(!box.pieces[p.i]){
-    box.pieces[p.i]=p.d;
+  if(!box.parts[p.i]){
+    box.parts[p.i]=p.d;
     box.count++;
   }
 
-  $('#scanOverlay').textContent=
-    `辨識 ${p.type} · 連線${p.lane} · ${box.count}/${box.n}`;
+  $('#scanBadge').textContent=
+    `${p.type} · 連線${p.lane} · ${box.count}/${box.n}`;
 
-  if(box.done || box.count!==box.n) return;
-
-  for(let i=0;i<box.n;i++){
-    if(typeof box.pieces[i]!=='string') return;
-  }
+  if(box.done||box.count!==box.n)return;
+  for(let i=0;i<box.n;i++)if(typeof box.parts[i]!=='string')return;
 
   box.done=true;
-  const sdp=await unpack(box.z,box.pieces.join(''));
+  const sdp=await uncompress(box.z,box.parts.join(''));
 
-  if(box.type==='OFFER'){
-    $('#scanOverlay').textContent=`Offer ${box.lane} 完整 → 建立 Answer`;
-    await createAnswer(box.lane,box.from,sdp);
-  }else{
-    $('#scanOverlay').textContent=`Answer ${box.lane} 完整`;
-    await applyAnswer(box.lane,sdp);
+  if(p.type==='OFFER'){
+    $('#scanBadge').textContent=`Offer ${p.lane} 完整 → Answer`;
+    await createAnswer(p.lane,p.from,sdp);
+  }else if(p.type==='ANSWER'){
+    $('#scanBadge').textContent=`Answer ${p.lane} 完整`;
+    await applyAnswer(p.lane,sdp);
   }
 }
 
-async function start(){
-  if(started){
-    collapsed=!collapsed;
-    $('#pairArea').classList.toggle('hidden',collapsed);
-    $('#connectBtn').textContent=collapsed?'連線QR展開':'連線QR收合';
-    return;
-  }
+async function startCamera(){
+  if(stream)return;
 
   if(!window.isSecureContext){
-    alert('前鏡頭需要 HTTPS。請把 HTML 放到 HTTPS 靜態網站後開啟。');
+    alert('相機需要 HTTPS');
     return;
   }
-
-  if(typeof window.qrcode!=='function'){
-    alert('QR 產生器載入失敗，請確認網路能載入 jsDelivr。');
-    return;
-  }
-
-  if(!navigator.mediaDevices?.getUserMedia){
-    alert('此瀏覽器不能使用相機。');
-    return;
-  }
-
-  started=true;
-  $('#connectBtn').textContent='連線QR收合';
-  status('啟動前鏡頭並建立兩組 Offer…');
 
   try{
-    await startCamera();
+    stream=await navigator.mediaDevices.getUserMedia({
+      video:{facingMode:'user',width:{ideal:1280},height:{ideal:720}},
+      audio:false
+    });
 
-    // 先生成第一條，第一條完成就立刻有 QR，不必等兩條都建立完。
-    await createOffer(1);
-    tickQr();
-    qrTimer=setInterval(tickQr,QR_INTERVAL);
+    $('#cam').srcObject=stream;
+    await $('#cam').play();
+    $('#cam').style.display='block';
+    $('#camPlaceholder').style.display='none';
+    $('#scanBadge').classList.remove('hidden');
+    $('#scanBadge').textContent='掃描中';
 
-    await createOffer(2);
-
-    scanRAF=requestAnimationFrame(scanLoop);
-    status('兩組 Offer QR 已生成，請讓兩台手機前鏡頭互掃');
+    if('BarcodeDetector'in window){
+      detector=new BarcodeDetector({formats:['qr_code']});
+      scanRAF=requestAnimationFrame(scan);
+    }else{
+      $('#scanBadge').textContent='此瀏覽器沒有 BarcodeDetector';
+      setStatus('QR 已正常生成；但此瀏覽器沒有 BarcodeDetector，無法自動掃描');
+    }
   }catch(e){
-    status('啟動失敗：'+e.message);
-    alert('啟動失敗：'+e.message);
+    setStatus('相機啟動失敗：'+e.message);
   }
+}
+
+async function scan(now){
+  scanRAF=requestAnimationFrame(scan);
+  if(scanBusy)return;
+  if(!scan.last)scan.last=0;
+  if(now-scan.last<66)return;
+  scan.last=now;
+
+  const v=$('#cam');
+  if(v.readyState<2||!v.videoWidth)return;
+
+  scanBusy=true;
+  try{
+    const scale=Math.min(1,720/v.videoWidth);
+    cv.width=Math.round(v.videoWidth*scale);
+    cv.height=Math.round(v.videoHeight*scale);
+    cx.drawImage(v,0,0,cv.width,cv.height);
+
+    const found=await detector.detect(cv);
+    if(found.length&&found[0].rawValue){
+      await receivePacket(found[0].rawValue);
+    }
+  }catch{}
+  finally{scanBusy=false}
 }
 
 function bestDc(){
   for(const id of [1,2]){
-    const lane=lanes[id];
-    for(const dc of [lane.offerDc,lane.answerDc]){
-      if(dc?.readyState==='open') return dc;
+    for(const dc of [lanes[id].offerDc,lanes[id].answerDc]){
+      if(dc?.readyState==='open')return dc;
     }
   }
   return null;
 }
 
 function fmt(n){
-  if(n<1024)return `${n} B`;
-  if(n<1024*1024)return `${(n/1024).toFixed(1)} KB`;
-  if(n<1024*1024*1024)return `${(n/1024/1024).toFixed(1)} MB`;
-  return `${(n/1024/1024/1024).toFixed(2)} GB`;
+  if(n<1024)return n+' B';
+  if(n<1048576)return (n/1024).toFixed(1)+' KB';
+  if(n<1073741824)return (n/1048576).toFixed(1)+' MB';
+  return (n/1073741824).toFixed(2)+' GB';
 }
-
 function addRow(parent,name,size){
   const li=document.createElement('li');
   li.className='file';
 
-  const nameEl=document.createElement('div');
-  nameEl.className='fname';
-  nameEl.textContent=name;
+  const n=document.createElement('div');
+  n.className='name';n.textContent=name;
 
-  const bar=document.createElement('div');
-  bar.className='bar';
+  const b=document.createElement('div');
+  b.className='bar';
   const fill=document.createElement('span');
-  bar.appendChild(fill);
+  b.appendChild(fill);
 
-  const meta=document.createElement('div');
-  meta.className='meta';
-  meta.textContent=fmt(size);
+  const m=document.createElement('div');
+  m.className='meta';m.textContent=fmt(size);
 
-  li.append(nameEl,bar,meta);
-  parent.appendChild(li);
+  li.append(n,b,m);parent.appendChild(li);
   return li;
 }
-
 function setRow(row,pct,text){
   row.querySelector('.bar span').style.width=
     Math.max(0,Math.min(100,pct))+'%';
@@ -700,11 +569,11 @@ async function sendFiles(files){
   for(const file of files){
     const dc=bestDc();
     if(!dc){
-      alert('目前沒有已連線的 WebRTC DataChannel');
+      alert('WebRTC 尚未連線');
       return;
     }
 
-    const id=hex(6);
+    const id=randomHex(6);
     const row=addRow($('#sendList'),file.name,file.size);
 
     dc.send(JSON.stringify({
@@ -712,22 +581,14 @@ async function sendFiles(files){
     }));
 
     let pos=0;
-
     while(pos<file.size){
       while(dc.bufferedAmount>4*1024*1024){
         await new Promise(r=>setTimeout(r,10));
       }
-
-      const end=Math.min(file.size,pos+FILE_CHUNK);
-      const buf=await file.slice(pos,end).arrayBuffer();
-      dc.send(buf);
+      const end=Math.min(file.size,pos+FILE_PART);
+      dc.send(await file.slice(pos,end).arrayBuffer());
       pos=end;
-
-      setRow(
-        row,
-        file.size ? pos*100/file.size : 100,
-        `${fmt(pos)} / ${fmt(file.size)}`
-      );
+      setRow(row,file.size?pos*100/file.size:100,`${fmt(pos)} / ${fmt(file.size)}`);
     }
 
     dc.send(JSON.stringify({t:'done',id}));
@@ -735,24 +596,59 @@ async function sendFiles(files){
   }
 }
 
-$('#connectBtn').addEventListener('click',start);
-$('#addFileBtn').addEventListener('click',()=>$('#fileInput').click());
+$('#connectBtn').addEventListener('click',()=>{
+  pairCollapsed=!pairCollapsed;
+  $('#pair').classList.toggle('hidden',pairCollapsed);
+  $('#connectBtn').textContent=pairCollapsed?'連線QR展開':'連線QR收合';
+});
+
+$('#cameraBox').addEventListener('click',startCamera);
+
+$('#addBtn').addEventListener('click',()=>$('#fileInput').click());
+
 $('#fileInput').addEventListener('change',async e=>{
   const files=[...e.target.files];
   e.target.value='';
-  if(files.length) await sendFiles(files);
+  if(files.length)await sendFiles(files);
 });
 
 window.addEventListener('beforeunload',()=>{
-  if(qrTimer) clearInterval(qrTimer);
-  if(scanRAF) cancelAnimationFrame(scanRAF);
-  if(stream) stream.getTracks().forEach(t=>t.stop());
-
+  if(qrTimer)clearInterval(qrTimer);
+  if(scanRAF)cancelAnimationFrame(scanRAF);
+  if(stream)stream.getTracks().forEach(t=>t.stop());
   for(const id of [1,2]){
     try{lanes[id].offerPc?.close()}catch{}
     try{lanes[id].answerPc?.close()}catch{}
   }
 });
+
+/* ===== 初始化：不等使用者、不等相機，先產生 QR ===== */
+async function init(){
+  // 等外部 QR library 一小段時間，避免 defer/cache 時序問題
+  for(let i=0;i<30 && typeof window.qrcode!=='function';i++){
+    await new Promise(r=>setTimeout(r,100));
+  }
+
+  showImmediateQr();
+
+  // 兩條 Offer 平行建立。任一條先完成就先開始輪播。
+  Promise.allSettled([
+    createOffer(1),
+    createOffer(2)
+  ]).then(results=>{
+    const bad=results.filter(x=>x.status==='rejected');
+    if(bad.length){
+      setStatus(
+        'QR 已產生；部分 Offer 建立失敗：'+
+        bad.map(x=>x.reason?.message||String(x.reason)).join(' / ')
+      );
+    }else{
+      setStatus('兩條 Offer QR 已生成。點右側「相機」啟動前鏡頭互掃。');
+    }
+  });
+}
+
+init();
 })();
 </script>
 </body>
