@@ -45,7 +45,8 @@ footer{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px sol
   <h1>NFC WebRTC 傳檔</h1>
   <div class="sub">
     純 HTML / Web NFC。無 QR、無 Cloudflare、無藍牙。<br>
-    <b>需要一張可重寫 NFC Tag 作為中繼。</b> Web NFC 不能讓另一支手機瀏覽器直接模擬 NFC 卡片。
+    <b>需要一張可重寫 NFC Tag 作為中繼。</b> Web NFC 不能讓另一支手機瀏覽器直接模擬 NFC 卡片。<br>
+    本版要求：Android Chromium + HTTPS + NDEF 可寫入 Tag。
   </div>
 
   <section class="card">
@@ -68,6 +69,7 @@ footer{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px sol
     <div id="sigCount" class="small">0 / 0</div>
 
     <div class="row" style="margin-top:12px">
+      <button id="testWriteBtn" class="warn">測試 NFC 寫入</button>
       <button id="writeBtn" class="primary" disabled>寫入目前資料到 NFC</button>
       <button id="readBtn" class="good" disabled>從 NFC 讀取資料</button>
     </div>
@@ -107,7 +109,7 @@ const $ = s => document.querySelector(s);
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
-const CHUNK_CHARS = 420; // 保守值；實際可依 Tag 容量加大
+const CHUNK_CHARS = 180; // 保守值；實際可依 Tag 容量加大
 let role = null;
 let phase = 'idle';
 let pc = null;
@@ -143,8 +145,14 @@ function setSigProgress(n,t){
 function setRtc(s){ $('#rtcText').textContent=s; log(s); }
 
 function supported(){
+  if(!window.isSecureContext){
+    alert('Web NFC 必須在 HTTPS 安全來源執行。請不要直接用 file:// 開啟此 HTML，請放到 HTTPS 網頁空間後再開。');
+    log('ERROR: 非安全來源。location=' + location.href);
+    return false;
+  }
   if(!('NDEFReader' in window)){
     alert('此瀏覽器沒有 Web NFC（NDEFReader）。請使用支援 Web NFC 的 Android Chromium 瀏覽器。');
+    log('ERROR: NDEFReader 不存在');
     return false;
   }
   if(!('RTCPeerConnection' in window)){
@@ -290,9 +298,10 @@ async function writeCurrent(){
   try{
     await ndef.write({
       records:[{
-        recordType:'mime',
-        mediaType:'application/json',
-        data:enc.encode(pkt)
+        recordType:'text',
+        data:pkt,
+        lang:'zh-TW',
+        encoding:'utf-8'
       }]
     });
     localIndex++;
@@ -311,7 +320,18 @@ async function writeCurrent(){
       setPhase(`第 ${localIndex} 筆完成。請讓對方讀取後，再回來寫第 ${localIndex+1} 筆`);
     }
   }catch(e){
-    setPhase(`NFC 寫入失敗：${e.message}`);
+    const detail = `${e.name || 'Error'}: ${e.message || String(e)}`;
+    setPhase(`NFC 寫入失敗：${detail}`);
+    log(`NFC WRITE ERROR -> ${detail}`);
+    if(e.name === 'NotAllowedError'){
+      log('提示：確認是 HTTPS、由按鈕操作觸發、Chrome 已允許 NFC 權限。');
+    }else if(e.name === 'NotSupportedError'){
+      log('提示：Tag 可能不是 NDEF、已鎖定，或裝置/瀏覽器不支援此寫法。');
+    }else if(e.name === 'NetworkError'){
+      log('提示：Tag 太快移開、NFC 天線沒對準，或寫入過程中斷。');
+    }else if(e.name === 'AbortError'){
+      log('提示：NFC 操作被取消或標籤離開感應範圍。');
+    }
   }
 }
 
@@ -325,9 +345,15 @@ async function readOne(){
     ndef.onreadingerror = () => setPhase('NFC 讀取錯誤，請重試');
     ndef.onreading = async ev => {
       for(const rec of ev.message.records){
-        if(rec.recordType !== 'mime') continue;
+        if(rec.recordType !== 'text' && rec.recordType !== 'mime') continue;
         try{
-          const pkt = JSON.parse(dec.decode(rec.data));
+          let raw;
+          if(rec.recordType === 'text'){
+            raw = dec.decode(rec.data);
+          }else{
+            raw = dec.decode(rec.data);
+          }
+          const pkt = JSON.parse(raw);
           if(pkt.v !== 1) continue;
 
           const expected = role === 'sender' ? 'offer' : 'answer';
@@ -412,6 +438,32 @@ async function sendFile(){
   $('#fileSendBtn').disabled=false;
 }
 
+
+async function testNfcWrite(){
+  if(!supported()) return;
+  const ndef = new NDEFReader();
+  const payload = 'NFC_TEST_' + Date.now();
+  setPhase('測試寫入：請把可寫入 NFC Tag 靠近手機 NFC 天線…');
+  log('開始 NFC 最小寫入測試');
+  try{
+    await ndef.write({
+      records:[{
+        recordType:'text',
+        data:payload,
+        lang:'en',
+        encoding:'utf-8'
+      }]
+    });
+    setPhase('✓ NFC 測試寫入成功');
+    log('NFC TEST WRITE OK: ' + payload);
+  }catch(e){
+    const detail = `${e.name || 'Error'}: ${e.message || String(e)}`;
+    setPhase('NFC 測試寫入失敗：' + detail);
+    log('NFC TEST WRITE ERROR -> ' + detail);
+    log('環境: secure=' + window.isSecureContext + ', url=' + location.href);
+  }
+}
+
 function resetAll(){
   role=null; phase='idle'; session=randomId();
   localSignal='';localChunks=[];localIndex=0;
@@ -452,6 +504,7 @@ $('#sendBtn').onclick = ()=>{
 };
 
 $('#resetBtn').onclick=resetAll;
+$('#testWriteBtn').onclick=testNfcWrite;
 $('#writeBtn').onclick=writeCurrent;
 $('#readBtn').onclick=readOne;
 $('#fileSendBtn').onclick=sendFile;
